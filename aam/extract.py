@@ -9,6 +9,7 @@ import trafilatura
 
 from aam.models import Document, FailedUrl
 
+_TEXT_TYPES = ("html", "xml", "text/plain")
 USER_AGENT = "Mozilla/5.0 (compatible; AIAnswerMatcher/1.0)"
 
 
@@ -30,10 +31,16 @@ def fetch_documents(urls: Sequence[str], origin: str, client: httpx.Client, *, t
         except (httpx.HTTPError, httpx.InvalidURL, UnicodeError) as exc:
             failed.append(FailedUrl(url, origin, f"Verbindungsfehler ({type(exc).__name__})"))
         else:
+            content_type = response.headers.get("content-type", "")
             if response.status_code >= 400:
                 failed.append(FailedUrl(url, origin, f"HTTP {response.status_code}"))
+            elif content_type and not any(kind in content_type.lower() for kind in _TEXT_TYPES):
+                failed.append(FailedUrl(url, origin, f"kein HTML ({content_type.split(';')[0].strip()})"))
             else:
-                text = extract_text(response.content)
+                try:
+                    text = extract_text(response.content)
+                except Exception:  # malformed or binary responses must not abort the run
+                    text = ""
                 if text:
                     docs.append(Document(url, text, origin))
                 else:

@@ -14,7 +14,7 @@ from aam.models import OWN, Document
 URL_COLUMNS = ("url", "address", "adresse", "page", "seite")
 CONTENT_COLUMNS = ("extract main content 1", "main content", "content", "text", "body text",
                    "seiteninhalt", "inhalt")
-_CONTENT_HINTS = ("content", "inhalt", "text")
+_CONTENT_HINTS = ("main content", "hauptinhalt", "seiteninhalt")
 
 
 @dataclass(frozen=True)
@@ -45,22 +45,32 @@ def _content_column(columns: Sequence[str], url_column: Optional[str]) -> Option
     return None
 
 
+def _cell(value) -> str:
+    """Cell as stripped text; missing values (None, NaN, pandas NA) become an empty string."""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):  # non-scalar cell
+        pass
+    return str(value).strip()
+
+
 def documents_from_frame(df: pd.DataFrame, *, origin: str = OWN) -> tuple[list[Document], ContentInfo]:
     columns = [str(c) for c in df.columns]
     url_column = _exact(columns, URL_COLUMNS)
     content_column = _content_column(columns, url_column)
     if url_column is None or content_column is None:
         raise ValueError(
-            "Spalten nicht gefunden. Erwartet werden eine URL-Spalte (z. B. 'Address' oder 'URL') und eine "
-            "Content-Spalte (z. B. 'Extract Main Content 1' oder 'Main Content'). "
+            "Spalten nicht gefunden. Erwartet werden eine URL-Spalte (z. B. „Address“ oder „URL“) und eine "
+            "Content-Spalte (z. B. „Extract Main Content 1“ oder „Main Content“). "
             f"Gefunden: {', '.join(columns)}"
         )
     docs: list[Document] = []
     seen: set[str] = set()
     empty = duplicates = 0
     for url, text in zip(df[url_column], df[content_column]):
-        url = str(url).strip()
-        text = "" if text is None else str(text).strip()
+        url = _cell(url)
+        text = _cell(text)
         if not url:
             continue
         key = url_key(url)

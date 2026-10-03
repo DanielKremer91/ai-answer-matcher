@@ -7,11 +7,18 @@ from typing import Optional
 from urllib.parse import urlsplit, urlunsplit
 
 _SCHEME = re.compile(r"^https?://", re.IGNORECASE)
+_ANY_SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*://", re.IGNORECASE)
+_LEADING = "<>()\"'\u201e\u201c,;"
+_TRAILING = "<>()\"'\u201e\u201c,;."
 
 
 def url_key(url: str) -> str:
-    """Comparison key: scheme, host case and a trailing slash do not matter."""
-    parts = urlsplit(url.strip())
+    """Comparison key: scheme, host case and a trailing slash do not matter. Never raises."""
+    url = url.strip()
+    try:
+        parts = urlsplit(url if _ANY_SCHEME.match(url) else f"https://{url}")
+    except ValueError:
+        return url.lower()
     key = parts.netloc.lower() + parts.path.rstrip("/")
     return f"{key}?{parts.query}" if parts.query else key
 
@@ -21,15 +28,18 @@ def parse_urls(text: Optional[str]) -> list[str]:
     urls: list[str] = []
     seen: set[str] = set()
     for token in (text or "").split():
-        token = token.strip(",;")
-        if not token:
+        token = token.lstrip(_LEADING).rstrip(_TRAILING)
+        if not token or "@" in token:
             continue
         if not _SCHEME.match(token):
             token = f"https://{token}"
-        parts = urlsplit(token)
-        if "." not in parts.netloc:
+        try:
+            parts = urlsplit(token)
+            if "." not in parts.netloc:
+                continue
+            url = urlunsplit((parts.scheme.lower(), parts.netloc, parts.path, parts.query, ""))
+        except ValueError:
             continue
-        url = urlunsplit((parts.scheme.lower(), parts.netloc, parts.path, parts.query, ""))
         key = url_key(url)
         if key in seen:
             continue

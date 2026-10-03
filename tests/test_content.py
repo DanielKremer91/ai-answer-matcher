@@ -1,4 +1,5 @@
 import io
+import re
 
 import pandas as pd
 import pytest
@@ -53,5 +54,26 @@ def test_rows_without_url_are_skipped():
 @pytest.mark.parametrize("columns", [["Foo", "Bar"], ["url", "Bar"], ["Foo", "text"]])
 def test_missing_columns_raise_with_the_found_names(columns):
     df = pd.DataFrame({c: ["x"] for c in columns})
-    with pytest.raises(ValueError, match=f"Gefunden: {columns[0]}, {columns[1]}"):
+    with pytest.raises(ValueError, match=re.escape(f"Gefunden: {columns[0]}, {columns[1]}")) as excinfo:
         documents_from_frame(df)
+    assert "„Address“" in str(excinfo.value)
+
+
+def test_content_type_column_is_not_taken_as_content_column():
+    df = pd.DataFrame({"Address": ["https://me.de/a"], "Content Type": ["text/html"], "Text Ratio": ["0.5"]})
+    with pytest.raises(ValueError, match=re.escape("Gefunden: Address, Content Type, Text Ratio")):
+        documents_from_frame(df)
+
+
+def test_missing_values_count_as_empty():
+    df = pd.DataFrame({"url": [None, float("nan"), pd.NA, "https://me.de/a", "https://me.de/b"],
+                       "text": ["x", "y", "z", float("nan"), None]})
+    docs, info = documents_from_frame(df)
+    assert [(d.url, d.text) for d in docs] == [("https://me.de/a", ""), ("https://me.de/b", "")]
+    assert (info.documents, info.empty) == (2, 2)
+
+
+def test_malformed_url_cell_does_not_raise():
+    df = pd.DataFrame({"url": ["http://[", "https://me.de/a"], "text": ["x", "y"]})
+    docs, _ = documents_from_frame(df)
+    assert [d.text for d in docs] == ["x", "y"]

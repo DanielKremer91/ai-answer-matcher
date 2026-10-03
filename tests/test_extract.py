@@ -56,3 +56,41 @@ def test_fetch_documents_sends_user_agent_and_follows_redirects():
         docs, failed = fetch_documents(["https://old.de/"], SOURCE, client)
     assert [d.url for d in docs] == ["https://old.de/"] and failed == []
     assert "AIAnswerMatcher" in route.calls[0].request.headers["User-Agent"]
+
+
+@respx.mock
+def test_fetch_documents_rejects_non_html_content_types_without_extracting(monkeypatch):
+    def boom(html):
+        raise AssertionError("extractor must not be called")
+
+    monkeypatch.setattr("aam.extract.extract_text", boom)
+    respx.get("https://pdf.de/a.pdf").mock(
+        return_value=httpx.Response(200, content=b"%PDF-1.4", headers={"Content-Type": "application/pdf; charset=binary"}))
+    with httpx.Client() as client:
+        docs, failed = fetch_documents(["https://pdf.de/a.pdf"], SOURCE, client)
+    assert docs == []
+    assert [(f.url, f.reason) for f in failed] == [("https://pdf.de/a.pdf", "kein HTML (application/pdf)")]
+
+
+@respx.mock
+def test_fetch_documents_passes_responses_without_content_type_to_the_extractor():
+    respx.get("https://plain.de/").mock(return_value=httpx.Response(200, content=HTML.encode("utf-8")))
+    with httpx.Client() as client:
+        docs, failed = fetch_documents(["https://plain.de/"], SOURCE, client)
+    assert [d.url for d in docs] == ["https://plain.de/"] and failed == []
+
+
+@respx.mock
+def test_fetch_documents_turns_extractor_exceptions_into_failures_and_continues(monkeypatch):
+    def flaky(html):
+        if b"bad" in html:
+            raise RuntimeError("lxml exploded")
+        return "Text"
+
+    monkeypatch.setattr("aam.extract.extract_text", flaky)
+    respx.get("https://bad.de/").mock(return_value=httpx.Response(200, html="<html>bad</html>"))
+    respx.get("https://good.de/").mock(return_value=httpx.Response(200, html="<html>good</html>"))
+    with httpx.Client() as client:
+        docs, failed = fetch_documents(["https://bad.de/", "https://good.de/"], SOURCE, client)
+    assert [d.url for d in docs] == ["https://good.de/"]
+    assert [(f.url, f.reason) for f in failed] == [("https://bad.de/", "kein Main Content gefunden")]
