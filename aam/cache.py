@@ -9,6 +9,8 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
+
 
 class JsonCache:
     def __init__(self, root: Path = Path(".cache")):
@@ -63,6 +65,8 @@ class MemoryCache:
         return self._data.get((namespace, key))
 
     def set(self, namespace: str, key: str, value: dict) -> None:
+        if "v" in value:  # embedding vectors: float32 arrays take a fraction of the memory of lists of floats
+            value = {**value, "v": np.asarray(value["v"], dtype=np.float32)}
         self._data[(namespace, key)] = value
 
     def clear(self) -> int:

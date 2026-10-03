@@ -143,3 +143,39 @@ def test_roundtrip_keeps_line_break_tab_and_pipe_in_the_text():
                          provider="openai", model="text-embedding-3-small", target_words=20)
     chunks, _ = read_exported(data)
     assert chunks[0].text == text
+
+
+def test_numeric_dataframe_is_accepted_as_well():
+    frame = pd.read_csv(io.BytesIO(exported()))
+    assert frame["embedding_0"].dtype.kind == "f"
+    chunks, target = chunks_from_frame(frame, provider="openai", model="text-embedding-3-small")
+    assert target == 27
+    assert chunks[0].vector.tolist() == approx([0.123457, -0.5, 0.25], abs=1e-6)
+    assert chunks[0].vector.dtype == np.float32
+
+
+def test_export_writes_six_significant_digits():
+    data = chunks_to_csv([Chunk("u", OWN, 0, "x", 1, np.array([0.123456789, 12.3456789, 1e-7], dtype=np.float32))],
+                         provider="p", model="m", target_words=20).decode("utf-8")
+    assert data.splitlines()[1].endswith(",0.123457,12.3457,1e-07")
+
+
+def test_import_of_a_large_export_stays_far_below_a_string_matrix():
+    import tracemalloc
+
+    rng = np.random.default_rng(1)
+    rows, dim = 600, 1536
+    values = rng.normal(scale=0.03, size=(rows, dim)).astype(np.float32)
+    frame = pd.DataFrame({"url": "u", "chunk_index": [str(i) for i in range(rows)], "text": "t", "words": "1",
+                          "provider": "p", "model": "m", "target_words": "20"})
+    vectors = pd.DataFrame({f"embedding_{i}": [f"{v:.6g}" for v in values[:, i]] for i in range(dim)})
+    frame = pd.concat([frame, vectors], axis=1)
+    tracemalloc.start()
+    try:
+        chunks, _ = chunks_from_frame(frame, provider="p", model="m")
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert len(chunks) == rows and chunks[5].vector.shape == (dim,)
+    assert chunks[5].vector.tolist() == approx(values[5].tolist(), abs=1e-6)
+    assert peak < 30 * 1024 * 1024  # the 2-D string matrix of the old import needed about 4x this

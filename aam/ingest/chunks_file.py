@@ -38,9 +38,9 @@ def chunks_to_csv(chunks: Sequence[Chunk], *, provider: str, model: str, target_
         "model": model,
         "target_words": target_words,
     })
-    matrix = np.round(np.vstack([c.vector for c in rows]).astype(np.float64), 6)
+    matrix = np.vstack([c.vector for c in rows]).astype(np.float32, copy=False)
     vectors = pd.DataFrame(matrix, columns=[f"embedding_{i}" for i in range(matrix.shape[1])])
-    return pd.concat([meta, vectors], axis=1).to_csv(index=False).encode("utf-8")
+    return pd.concat([meta, vectors], axis=1).to_csv(index=False, float_format="%.6g").encode("utf-8")
 
 
 INVALID_NUMBERS = ("Der Chunk-Embedding-Export enthält ungültige Zahlen. "
@@ -55,11 +55,17 @@ def _parse_numbers(df: pd.DataFrame, embedding_columns: list[str], *,
         text = str(value).strip()
         return float(text.replace(",", ".") if decimal_comma else text)
 
-    cells = df[embedding_columns].to_numpy(dtype=str)
-    if decimal_comma:
-        cells = np.char.replace(cells, ",", ".")
-    with np.errstate(over="ignore"):
-        matrix = cells.astype(np.float32)
+    # Column by column: a 2-D array of Python strings would need about 0.9 GB for 5,000 chunks.
+    matrix = np.empty((len(df), len(embedding_columns)), dtype=np.float32)
+    for position, name in enumerate(embedding_columns):
+        column = df[name]
+        if not pd.api.types.is_numeric_dtype(column):
+            column = column.astype(str).str.strip()
+            if decimal_comma:
+                column = column.str.replace(",", ".", regex=False)
+        values = pd.to_numeric(column, errors="raise").to_numpy(dtype=np.float64, na_value=np.nan)
+        with np.errstate(over="ignore"):
+            matrix[:, position] = values
     if not np.isfinite(matrix).all():
         raise ValueError("non-finite embedding value")
     target = int(number(df["target_words"].iloc[0]))
