@@ -1,0 +1,4 @@
+# Runtime plus test tools: pip install -r requirements-dev.txt
+-r requirements.txt
+pytest>=8,<10
+respx>=0.21,<1
