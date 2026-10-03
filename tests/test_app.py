@@ -185,12 +185,25 @@ def test_changed_inputs_require_new_chunking():
     assert len(at.get("download_button")) == 0
 
 
-def test_threshold_change_rematches_without_new_embeddings(backend):
+def test_threshold_change_rematches_without_new_embeddings(backend, monkeypatch):
+    import aam.pipeline
+
+    runs = []
+    real_analyze = aam.pipeline.analyze
+
+    def counting_analyze(*args, **kwargs):
+        runs.append(1)
+        return real_analyze(*args, **kwargs)
+
+    monkeypatch.setattr("aam.pipeline.analyze", counting_analyze)
     at = analyzed(source_file=True)
+    assert len(runs) == 1
+    assert at.session_state["result"].meta.weak_delta == 0.15
     calls = backend.calls
     at.sidebar.slider(key="weak_delta").set_value(0.5).run()
     assert not at.exception
     assert at.session_state["result"].meta.weak_delta == 0.5
+    assert len(runs) == 1  # re-matched, not analysed again
     assert backend.calls == calls
 
 
@@ -294,3 +307,53 @@ def test_prepare_warning_is_shown_once_after_a_full_analysis():
     assert has_state(at, "result")
     warnings = [w.value for w in at.warning if "gehört zum eigenen Content" in w.value]
     assert len(warnings) == 1
+
+
+def test_all_own_urls_failing_shows_the_reasons_with_the_error(backend):
+    at = chunked(own_urls="https://weg.de/a\nhttps://weg.de/b")
+    assert not at.exception
+    assert len(at.error) == 1
+    message = at.error[0].value
+    assert "Kein eigener Content mit Text vorhanden" in message
+    assert "• https://weg.de/a (HTTP 403)" in message and "• https://weg.de/b (HTTP 403)" in message
+    assert not has_state(at, "prepared")
+
+
+def test_failure_reasons_are_capped_at_ten_lines(backend):
+    urls = "\n".join(f"https://weg.de/{i}" for i in range(12))
+    at = chunked(own_urls=urls)
+    message = at.error[0].value
+    assert message.count("• https://weg.de/") == 10 and "… und 2 weitere" in message
+
+
+def test_reused_export_shows_the_source_target_in_the_protocol(backend):
+    data = chunks_to_csv(sample_result().own_chunks, provider="openai", model="text-embedding-3-small",
+                         target_words=40)
+    at = new_app()
+    at.file_uploader(key="own_upload").set_value(("chunks_embeddings.csv", data, "text/csv"))
+    at.file_uploader(key="source_upload").set_value(("quellen.csv", table_csv(SOURCE_DOCS), "text/csv"))
+    at.run()
+    button(at, CHUNK_BUTTON).click()
+    at.run()
+    assert not at.exception
+    assert "geschnitten mit Zielgröße 40 Wörter wie der hochgeladene Export" in at.code[0].value
+    assert at.session_state["prepared"].source_target_words == 40
+    button(at, ANALYZE_BUTTON).click()
+    at.run()
+    assert not at.exception
+    assert at.session_state["result"].meta.source_target_words == 40
+
+
+def test_chunk_export_is_built_only_on_demand(monkeypatch):
+    built = []
+    real = chunks_to_csv
+
+    def counting(*args, **kwargs):
+        built.append(1)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr("aam.ingest.chunks_file.chunks_to_csv", counting)
+    at = analyzed()
+    assert not at.exception and not at.error
+    assert len(at.get("download_button")) == 2
+    assert built == [] and not has_state(at, "chunks_csv")

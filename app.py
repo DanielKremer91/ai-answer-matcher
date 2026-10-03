@@ -147,6 +147,14 @@ def fetch_missing(urls, origin: str, known: set):
     return found, list(failed)
 
 
+def failure_lines(failed, limit: int = 10) -> list[str]:
+    """One line per URL that could not be loaded, so an error about missing content shows the reason."""
+    lines = [f"• {f.url} ({f.reason})" for f in failed[:limit]]
+    if len(failed) > limit:
+        lines.append(f"… und {len(failed) - limit} weitere")
+    return lines
+
+
 def cached_bytes(slot: str, key, build):
     """Build a download once per result instead of on every rerun."""
     entry = state.get(slot)
@@ -181,10 +189,13 @@ def show_result(result, shown_warnings=()) -> None:
     left.download_button("Excel herunterladen", data=excel, mime=XLSX_MIME, key="download_excel",
                          file_name=f"ai-answer-matcher_{slug}_{result.meta.date}.xlsx")
     if not result.meta.prechunked:
-        chunks_csv = cached_bytes("chunks_csv", signature, lambda: chunks_file.chunks_to_csv(
-            result.own_chunks, provider=provider_name, model=model, target_words=result.meta.target_words))
+        export = dict(chunks=result.own_chunks, provider=provider_name, model=model,
+                      target_words=result.meta.target_words)  # bound now, the callable runs later
         right.download_button(
-            "Chunk-Embeddings herunterladen", data=chunks_csv, mime="text/csv", key="download_chunks",
+            "Chunk-Embeddings herunterladen", mime="text/csv", key="download_chunks",
+            data=lambda: chunks_file.chunks_to_csv(  # built only when the user clicks
+                export["chunks"], provider=export["provider"], model=export["model"],
+                target_words=export["target_words"]),
             file_name=f"chunks_embeddings_{result.meta.date}.csv",
             help="Beim nächsten Keyword statt des Frog-Exports hochladen. "
                  "Dann wird nur noch die AI-Antwort eingebettet.")
@@ -236,6 +247,7 @@ st.header("3. Chunking prüfen")
 if not ready:
     st.caption("Es fehlen noch Keyword, AI-Antwort oder eigener Content.")
 if st.button("Segmentieren und chunken", disabled=not ready, type="primary"):
+    failed_own: list = []
     try:
         table_own = own_parsed["docs"] if own_parsed else []
         fetched_own, failed_own = ([], []) if prechunked else fetch_missing(
@@ -256,10 +268,9 @@ if st.button("Segmentieren und chunken", disabled=not ready, type="primary"):
         state["prepared_sig"] = input_signature()
         state.pop("result", None)
         state.pop("excel", None)  # downloads belong to the previous result
-        state.pop("chunks_csv", None)
     except RUN_ERRORS as exc:
         state.pop("prepared", None)
-        st.error(str(exc))
+        st.error("\n\n".join([str(exc), *failure_lines(failed_own)]))
 
 prepared = state.get("prepared")
 fresh = prepared is not None and state.get("prepared_sig") == input_signature()
@@ -269,7 +280,7 @@ if prepared is not None and not fresh:
 if fresh:
     st.code("\n".join(report.protocol_lines(
         prepared.answer, prepared.own_stats, prepared.source_stats, prepared.failed,
-        prechunked=prepared.prechunked)), language=None, wrap_lines=True)
+        prechunked=prepared.prechunked, source_target_words=prepared.source_target_words)), language=None, wrap_lines=True)
     for warning in prepared.warnings:
         st.warning(warning)
     st.markdown("**AI-Chunks:** so wurde die Antwort in Themen und Aussagen zerlegt")
@@ -292,7 +303,6 @@ if st.button("Analyse starten", disabled=not fresh, type="primary"):
                                                       text=f"Embeddings: {done} von {total} Texten"))
         state["result_sig"] = state["prepared_sig"]
         state.pop("excel", None)  # a new result must not be served with the old download bytes
-        state.pop("chunks_csv", None)
     except RUN_ERRORS as exc:
         state.pop("result", None)
         st.error(f"Analyse fehlgeschlagen: {exc}")

@@ -1,5 +1,6 @@
 # Runtime dependencies (also what Streamlit Community Cloud installs).
-streamlit>=1.64,<2
+# streamlit 1.65: st.download_button accepts a callable for data (the chunk export is built on click)
+streamlit>=1.65,<2
 httpx>=0.27,<1
 pandas>=2.2,<4
 numpy>=1.26,<3
