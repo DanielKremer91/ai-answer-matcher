@@ -75,6 +75,9 @@ def test_second_analysis_reuses_cached_embeddings():
     assert provider.calls == 7 and seen[-1] == (7, 7)
     analyze(prepared, provider, cache, weak_delta=0.3)
     assert provider.calls == 7
+    fresh = prepare(KEYWORD, ANSWER, own_docs=OWN_DOCS, source_docs=SOURCE_DOCS)
+    analyze(fresh, provider, cache)
+    assert provider.calls == 7
 
 
 def test_rematch_applies_new_thresholds_without_embedding():
@@ -203,3 +206,74 @@ def test_only_own_pages_as_sources_with_prechunked_own_content():
     assert prepared.source_chunks == [] and prepared.source_stats is None
     result = analyze(prepared, FakeProvider(), None)
     assert result.match.has_sources is False and OWN_WARNING in result.meta.warnings
+
+
+def all_chunks(prepared):
+    return prepared.own_chunks + prepared.source_chunks
+
+
+def test_analyze_does_not_change_prepared():
+    prepared = prepare(KEYWORD, ANSWER, own_docs=OWN_DOCS, source_docs=SOURCE_DOCS)
+    before = prepared.texts_to_embed
+    result = analyze(prepared, FakeProvider(), None)
+    assert all(c.vector is None for c in all_chunks(prepared))
+    assert prepared.texts_to_embed == before == 7
+    assert all(c.vector is not None for c in result.own_chunks + result.source_chunks)
+
+
+def test_second_analysis_with_another_model_does_not_mix_vectors():
+    prepared = prepare(KEYWORD, ANSWER, own_docs=OWN_DOCS, source_docs=SOURCE_DOCS)
+    # no shared cache: both fakes report the same provider and model name, so they would share cache keys
+    first = analyze(prepared, FakeProvider(), None)
+    second = analyze(prepared, FakeProvider(dim=32), None)
+    assert second.meta.dimension == 32
+    assert {len(c.vector) for c in second.own_chunks + second.source_chunks} == {32}
+    assert {len(v) for v in second.statement_vectors} == {32}
+    assert first.meta.dimension == 64
+    assert {len(c.vector) for c in first.own_chunks + first.source_chunks} == {64}
+
+
+class RecordingProvider(FakeProvider):
+    def __init__(self, dim: int = 64):
+        super().__init__(dim)
+        self.texts: list[str] = []
+
+    def _embed_batch(self, texts):
+        self.texts.extend(texts)
+        return super()._embed_batch(texts)
+
+
+def test_prechunked_dimension_mismatch_is_found_before_the_sources_are_embedded():
+    extra = Document("https://quelle.de/extra", "Ganz anderer Text über Solaranlagen und Wärmepumpen.", SOURCE)
+    prepared = prechunked(sample_result(), source_docs=[extra, *SOURCE_DOCS])
+    source_texts = {c.text for c in prepared.source_chunks}
+    statement_texts = {s.text for s in prepared.answer.statements}
+    assert source_texts - statement_texts  # the sources hold a text of their own
+    provider = RecordingProvider(dim=32)
+    with pytest.raises(ChunkFileError, match="Dimension 64.*Dimension 32"):
+        analyze(prepared, provider, None)
+    assert set(provider.texts) <= statement_texts
+
+
+def test_prechunked_run_reports_one_continuous_progress():
+    prepared = prechunked(sample_result(), source_docs=[
+        Document("https://quelle.de/extra", "Ganz anderer Text über Solaranlagen und Wärmepumpen.", SOURCE),
+        *SOURCE_DOCS])
+    provider, seen = FakeProvider(), []
+    analyze(prepared, provider, None, progress=lambda done, total: seen.append((done, total)))
+    assert provider.calls == 6
+    assert seen[-1] == (6, 6) and {total for _, total in seen} == {6}
+    done = [d for d, _ in seen]
+    assert done == sorted(done)
+
+
+def test_stored_vectors_are_used_only_for_prechunked_own_chunks():
+    prepared = prechunked(sample_result())
+    result = analyze(prepared, FakeProvider(), None)
+    assert [c.vector.tolist() for c in result.own_chunks] == [c.vector.tolist() for c in prepared.own_chunks]
+    assert result.own_chunks[0] is not prepared.own_chunks[0]
+
+
+def test_source_listed_twice_that_is_an_own_page_warns_once():
+    prepared = prepare(KEYWORD, ANSWER, own_docs=OWN_DOCS, source_docs=[OWN_AS_SOURCE, OWN_AS_SOURCE, *SOURCE_DOCS])
+    assert prepared.warnings == (OWN_WARNING,)

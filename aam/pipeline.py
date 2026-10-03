@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Callable, Optional, Sequence
 
+import numpy as np
+
 from aam.chunk import chunk_documents, stats_for
 from aam.embeddings import EmbeddingProvider, embed_cached
 from aam.ingest.chunks_file import check_dimension
@@ -21,20 +23,24 @@ MAX_TARGET_DEVIATION = 0.5
 @dataclass
 class Prepared:
     answer: SegmentedAnswer
-    own_chunks: list
-    source_chunks: list
+    own_chunks: list[Chunk]
+    source_chunks: list[Chunk]
     own_stats: ChunkStats
     source_stats: Optional[ChunkStats]
-    failed: tuple
-    warnings: tuple
-    prechunked: bool
+    failed: tuple[FailedUrl, ...]
+    warnings: tuple[str, ...]
+    prechunked: bool  # own chunks carry vectors from an uploaded export
 
     @property
     def texts_to_embed(self) -> int:
         """Distinct texts the next analysis sends to the provider at most."""
         texts = {s.text for s in self.answer.statements}
-        texts.update(c.text for c in self.own_chunks + self.source_chunks if c.vector is None)
+        texts.update(c.text for c in self._chunks_to_embed())
         return len(texts)
+
+    def _chunks_to_embed(self) -> list[Chunk]:
+        """Chunks without a stored vector; uploaded own chunks bring theirs."""
+        return self.source_chunks if self.prechunked else self.own_chunks + self.source_chunks
 
 
 def combine_documents(table_docs: Sequence[Document], fetched_docs: Sequence[Document]) -> list[Document]:
@@ -73,9 +79,13 @@ def prepare(keyword: str, answer_text: str, *, own_docs: Sequence[Document] = ()
         raise ValueError("Kein eigener Content mit Text vorhanden. Bitte Export oder URL-Liste prüfen.")
     own_keys = {url_key(d.url) for d in own_docs} if own_chunks is None else {url_key(c.url) for c in chunks}
     benchmarks = []
+    warned: set[str] = set()
     for doc in source_docs:
-        if url_key(doc.url) in own_keys:
-            warnings.append(f"{doc.url} gehört zum eigenen Content und wird nicht als Quelle gewertet.")
+        key = url_key(doc.url)
+        if key in own_keys:
+            if key not in warned:
+                warned.add(key)
+                warnings.append(f"{doc.url} gehört zum eigenen Content und wird nicht als Quelle gewertet.")
         else:
             benchmarks.append(doc)
     source_chunks: list[Chunk] = []
@@ -86,24 +96,66 @@ def prepare(keyword: str, answer_text: str, *, own_docs: Sequence[Document] = ()
                     own_chunks is not None)
 
 
+class _StagedEmbedder:
+    """Embeds texts in several steps but reports one continuous progress over the whole run."""
+
+    def __init__(self, provider: EmbeddingProvider, cache, progress: Optional[Callable[[int, int], None]],
+                 all_texts: Sequence[str]):
+        self._provider, self._cache, self._progress = provider, cache, progress
+        self._total = len(set(all_texts))
+        self._known: dict[str, Optional[np.ndarray]] = {}
+        self._done = 0
+        self._reported = 0
+
+    def _report(self, done: int) -> None:
+        if self._progress and done > self._reported:
+            self._reported = done
+            self._progress(done, self._total)
+
+    def embed(self, texts: Sequence[str]) -> list[Optional[np.ndarray]]:
+        fresh = [t for t in dict.fromkeys(texts) if t not in self._known]
+        base = self._done
+
+        def report(done: int, total: int) -> None:  # embed_cached counts only cache misses
+            self._report(base + round(done * len(fresh) / total))
+
+        if fresh:
+            self._known.update(zip(fresh, embed_cached(self._provider, fresh, self._cache, progress=report)))
+        self._done = base + len(fresh)
+        self._report(self._done)
+        return [self._known[t] for t in texts]
+
+
 def analyze(prepared: Prepared, provider: EmbeddingProvider, cache, *, covered_delta: float = 0.05,
             weak_delta: float = 0.15, progress: Optional[Callable[[int, int], None]] = None,
             today: Optional[date] = None) -> Result:
+    """Embed and match. `prepared` stays untouched, so it can be analysed again with another model."""
     statements = prepared.answer.statements
-    pending = [c for c in prepared.own_chunks + prepared.source_chunks if c.vector is None]
-    texts = [s.text for s in statements] + [c.text for c in pending]
-    vectors = embed_cached(provider, texts, cache, progress=progress)
-    statement_vectors = vectors[:len(statements)]
-    if any(v is None for v in statement_vectors):
-        raise ValueError("Mindestens eine Aussage der AI-Antwort konnte nicht eingebettet werden.")
-    for chunk, vector in zip(pending, vectors[len(statements):]):
-        chunk.vector = vector
-    dimension = len(statement_vectors[0])
-    if prepared.prechunked:
-        check_dimension(prepared.own_chunks, dimension)
+    statement_texts = [s.text for s in statements]
+    to_embed = prepared._chunks_to_embed()
+    embedder = _StagedEmbedder(provider, cache, progress, statement_texts + [c.text for c in to_embed])
 
-    own = [c for c in prepared.own_chunks if c.vector is not None]
-    sources = [c for c in prepared.source_chunks if c.vector is not None]
+    def embed_chunks(chunks: list[Chunk]) -> list[Chunk]:
+        vectors = embedder.embed([c.text for c in chunks])
+        return [dataclasses.replace(c, vector=v) for c, v in zip(chunks, vectors) if v is not None]
+
+    if prepared.prechunked:
+        statement_vectors = embedder.embed(statement_texts)
+        _require_statement_vectors(statement_vectors)
+        dimension = len(statement_vectors[0])
+        check_dimension(prepared.own_chunks, dimension)  # before the sources cost any embedding
+        own = [dataclasses.replace(c) for c in prepared.own_chunks if c.vector is not None]
+        sources = embed_chunks(prepared.source_chunks)
+    else:
+        n_own = len(prepared.own_chunks)
+        vectors = embedder.embed(statement_texts + [c.text for c in to_embed])
+        statement_vectors = vectors[:len(statements)]
+        _require_statement_vectors(statement_vectors)
+        dimension = len(statement_vectors[0])
+        chunk_vectors = vectors[len(statements):]
+        replaced = [dataclasses.replace(c, vector=v) for c, v in zip(to_embed, chunk_vectors)]
+        own = [c for c in replaced[:n_own] if c.vector is not None]
+        sources = [c for c in replaced[n_own:] if c.vector is not None]
     warnings = list(prepared.warnings)
     dropped = len(prepared.own_chunks) + len(prepared.source_chunks) - len(own) - len(sources)
     if dropped:
@@ -130,6 +182,11 @@ def analyze(prepared: Prepared, provider: EmbeddingProvider, cache, *, covered_d
     )
     return Result(meta, matched, prepared.answer, own, sources, prepared.own_stats, prepared.source_stats,
                   list(statement_vectors))
+
+
+def _require_statement_vectors(vectors: Sequence[Optional[np.ndarray]]) -> None:
+    if any(v is None for v in vectors):
+        raise ValueError("Mindestens eine Aussage der AI-Antwort konnte nicht eingebettet werden.")
 
 
 def rematch(result: Result, *, covered_delta: float, weak_delta: float) -> Result:
