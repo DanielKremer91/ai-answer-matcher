@@ -4,23 +4,31 @@ from __future__ import annotations
 
 import re
 from typing import Optional
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 _SCHEME = re.compile(r"^https?://", re.IGNORECASE)
 _ANY_SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*://", re.IGNORECASE)
 _LEADING = "<>\"'\u201e\u201c,;"  # round brackets are handled separately in _strip_wrappers
 _TRAILING = "<>\"'\u201e\u201c,;."
+_TRACKING_PARAMS = frozenset({"srsltid", "gclid", "fbclid", "msclkid", "ref"})
+
+
+def _is_tracking(parameter: str) -> bool:
+    name = parameter.split("=", 1)[0].lower()
+    return name.startswith("utm_") or name in _TRACKING_PARAMS
 
 
 def url_key(url: str) -> str:
-    """Comparison key: scheme, host case and a trailing slash do not matter. Never raises."""
+    """Comparison key: scheme, host case, a trailing slash, percent-encoding of the path and tracking
+    parameters (utm_*, srsltid, gclid, ...) do not matter. Never raises."""
     url = url.strip()
     try:
         parts = urlsplit(url if _ANY_SCHEME.match(url) else f"https://{url}")
     except ValueError:
         return url.lower()
-    key = parts.netloc.lower() + parts.path.rstrip("/")
-    return f"{key}?{parts.query}" if parts.query else key
+    key = parts.netloc.lower() + unquote(parts.path.rstrip("/"))
+    query = "&".join(p for p in parts.query.split("&") if p and not _is_tracking(p))
+    return f"{key}?{query}" if query else key
 
 
 def _strip_wrappers(token: str) -> str:

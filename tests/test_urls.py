@@ -47,3 +47,22 @@ def test_parse_urls_keeps_at_signs_in_urls_but_drops_mail_addresses():
     assert parse_urls("https://medium.com/@user/post") == ["https://medium.com/@user/post"]
     assert parse_urls("medium.com/@user") == ["https://medium.com/@user"]
     assert parse_urls("MAILTO:x@a.de x@a.de") == []
+
+
+def test_url_key_ignores_tracking_parameters_and_keeps_the_others_in_order():
+    plain = url_key("www.me.de/kosten")
+    assert url_key("https://www.me.de/kosten/?srsltid=abc") == plain
+    assert url_key("https://www.me.de/kosten?utm_source=chatgpt.com") == plain
+    assert url_key("https://a.de/x?p=1&utm_medium=x") == "a.de/x?p=1"
+    assert url_key("https://a.de/x?b=2&UTM_Campaign=c&a=1&GCLID=z&fbclid=1&msclkid=2&Ref=3") == "a.de/x?b=2&a=1"
+    assert url_key("https://a.de/x?utm_source=a&gclid=b") == "a.de/x"
+
+
+def test_url_key_compares_the_percent_decoded_path():
+    assert url_key("me.de/ä") == url_key("me.de/%C3%A4") == "me.de/ä"
+
+
+def test_parse_urls_dedupes_by_key_and_keeps_the_first_url_as_typed():
+    text = "https://www.me.de/kosten/?srsltid=abc\nhttps://www.me.de/kosten?utm_source=chatgpt.com\nwww.me.de/kosten"
+    assert parse_urls(text) == ["https://www.me.de/kosten/?srsltid=abc"]
+    assert parse_urls("me.de/ä\nme.de/%C3%A4") == ["https://me.de/ä"]

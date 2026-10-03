@@ -277,3 +277,11 @@ def test_stored_vectors_are_used_only_for_prechunked_own_chunks():
 def test_source_listed_twice_that_is_an_own_page_warns_once():
     prepared = prepare(KEYWORD, ANSWER, own_docs=OWN_DOCS, source_docs=[OWN_AS_SOURCE, OWN_AS_SOURCE, *SOURCE_DOCS])
     assert prepared.warnings == (OWN_WARNING,)
+
+
+def test_source_with_tracking_parameters_is_recognised_as_an_own_page():
+    tracked = Document("https://me.de/kosten/?utm_source=chatgpt.com", "Kosten der Dachsanierung", SOURCE)
+    prepared = prepare(KEYWORD, ANSWER, own_docs=OWN_DOCS, source_docs=[tracked, *SOURCE_DOCS])
+    assert prepared.warnings == (
+        "https://me.de/kosten/?utm_source=chatgpt.com gehört zum eigenen Content und wird nicht als Quelle gewertet.",)
+    assert {c.url for c in prepared.source_chunks} == {"https://quelle.de/foerderung"}
