@@ -68,3 +68,14 @@ SOURCE_DOCS = [
         SOURCE,
     ),
 ]
+
+
+def sample_result(with_sources: bool = True):
+    """A complete run over the sample data with the fake provider."""
+    from datetime import date
+
+    from aam.pipeline import analyze, prepare
+
+    prepared = prepare("dachsanierung kosten", ANSWER, own_docs=OWN_DOCS,
+                       source_docs=SOURCE_DOCS if with_sources else [])
+    return analyze(prepared, FakeProvider(), None, today=date(2026, 10, 3))
