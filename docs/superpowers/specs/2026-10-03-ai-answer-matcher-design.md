@@ -145,6 +145,7 @@ Beim Hochladen dieser Datei als eigener Content:
 - Provider, Modell und Dimension müssen zur aktuellen Einstellung passen. Sonst Abbruch mit klarer Meldung, welche Werte in der Datei stehen.
 - Die Chunks werden nicht neu geschnitten. Weicht die gespeicherte Zielgröße um mehr als 50 Prozent von der Zielgröße der aktuellen AI-Antwort ab, erscheint ein Warnhinweis, der Lauf geht weiter.
 - Eingebettet werden nur noch AI-Antwort und Quellen.
+- Die Quellen werden in diesem Fall mit der gespeicherten Zielgröße geschnitten, nicht mit der Zielgröße der aktuellen AI-Antwort. So haben eigene Chunks und Quell-Chunks dieselbe Granularität, und das Delta wird nicht durch unterschiedliche Chunk-Größen verzerrt.
 
 ## 9. Oberfläche (`app.py`)
 
