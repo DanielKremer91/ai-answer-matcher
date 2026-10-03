@@ -1,9 +1,11 @@
 import io
+from dataclasses import replace
 
+import openpyxl
 import pandas as pd
 
 from aam.match import QUARTILE_LABELS
-from aam.models import SOURCE, FailedUrl
+from aam.models import SOURCE, Chunk, ChunkStats, FailedUrl, SegmentedAnswer, Statement, Topic
 from aam.report import (KEYWORD_COLUMN, SHEETS, answer_frame, chunks_frame, pages_frame, protocol_frame,
                         protocol_lines, statements_frame, summary, to_excel, topics_frame)
 from tests.fakes import sample_result
@@ -77,7 +79,7 @@ def test_protocol_lines_describe_answer_chunking_and_failures():
                         "(Segmentierung: Struktur)")
     assert lines[1].startswith("Eigener Content: 2 Seiten → 3 Chunks, Median ")
     assert "2 Absätze zusammengelegt, 0 Absätze geteilt" in lines[1]
-    assert lines[2].startswith("Quellen: 1 Seiten → 2 Chunks")
+    assert lines[2].startswith("Quellen: 1 Seite → 2 Chunks")
     assert lines[3] == "Nicht geladen (Quelle): https://quelle.de/x (HTTP 403)"
 
 
@@ -117,3 +119,71 @@ def test_answer_frame_shows_every_ai_chunk():
     df = answer_frame(sample_result().answer)
     assert list(df.columns) == ["Thema", "Aussage", "Wortzahl"]
     assert len(df) == 5 and df.iloc[3]["Thema"] == "Förderung" and df.iloc[3]["Wortzahl"] == 8
+
+
+NASTY_TEXTS = ["abc\x00def\x07", "=SUM(A1)", "+49 221 123", "@handle", "-5 Grad", "x" * 40000]
+
+
+def _result_with_nasty_chunks():
+    result = sample_result()
+    own = [Chunk(url="https://me.de/nasty", origin="own", index=i, text=text, words=3)
+           for i, text in enumerate(NASTY_TEXTS)]
+    return replace(result, own_chunks=own)
+
+
+def test_excel_export_survives_control_characters_formulas_and_long_texts():
+    data = to_excel(_result_with_nasty_chunks())
+    sheet = openpyxl.load_workbook(io.BytesIO(data))["Chunks"]
+    header = [c.value for c in sheet[1]]
+    text_col = header.index("Text") + 1
+    cells = {row[text_col - 1].value: row[text_col - 1] for row in sheet.iter_rows(min_row=2)}
+    values = list(cells)
+    assert "abcdef" in values and not any("\x00" in v or "\x07" in v for v in values)
+    for original in ("=SUM(A1)", "+49 221 123", "@handle", "-5 Grad"):
+        cell = cells["'" + original]
+        assert cell.data_type == "s" and cell.value == "'" + original
+    long_values = [v for v in values if v.startswith("xxx")]
+    assert len(long_values) == 1
+    assert len(long_values[0]) <= 32767 and long_values[0].endswith("[gekürzt]")
+
+
+def test_excel_cleaning_does_not_alter_the_frames_shown_in_the_ui():
+    result = _result_with_nasty_chunks()
+    to_excel(result)
+    texts = list(chunks_frame(result)["Text"])
+    for original in NASTY_TEXTS:
+        assert original in texts
+
+
+def _stats(documents, chunks, merged, split, empty_urls=(), median=1.0):
+    return ChunkStats(documents=documents, chunks=chunks, median_words=median, p10_words=1.0, p90_words=1.0,
+                      merged=merged, split=split, empty_urls=empty_urls)
+
+
+def test_protocol_lines_use_singular_forms_for_counts_of_one():
+    answer = SegmentedAnswer("k", (Topic(1, "T", (Statement(1, 1, "Ein Satz.", 2),)),), 1, 1.0, "structure")
+    lines = protocol_lines(answer, _stats(1, 1, 1, 1, ("https://x.de",)), _stats(2, 2, 2, 2, ("a", "b")), [])
+    assert lines[0] == "AI-Antwort: 1 Thema, 1 Aussage, Median 1 Wort → Zielgröße 1 Wort (Segmentierung: Struktur)"
+    assert lines[1] == ("Eigener Content: 1 Seite → 1 Chunk, Median 1 Wort (p10: 1, p90: 1), "
+                        "1 Absatz zusammengelegt, 1 Absatz geteilt, 1 Seite ohne Text")
+    assert lines[2] == ("Quellen: 2 Seiten → 2 Chunks, Median 1 Wort (p10: 1, p90: 1), "
+                        "2 Absätze zusammengelegt, 2 Absätze geteilt, 2 Seiten ohne Text")
+
+
+def test_summary_keeps_aussagen_plural_for_totals_and_singular_for_single_gaps():
+    text = summary(sample_result())
+    assert " von 5 Aussagen abgedeckt" in text
+    result = sample_result()
+    topics = [replace(t, counts={**t.counts, "Lücke": 1}) if t.counts.get("Lücke") else t
+              for t in result.match.topics]
+    text = summary(replace(result, match=replace(result.match, topics=topics)))
+    assert "1 Aussage im Thema „Förderung“" in text
+
+
+def test_protocol_thresholds_are_rounded():
+    result = sample_result()
+    result = replace(result, meta=replace(result.meta, covered_delta=0.05000000000000001,
+                                          weak_delta=0.15000000000000002))
+    values = dict(zip(protocol_frame(result)["Angabe"], protocol_frame(result)["Wert"]))
+    assert values["Schwelle abgedeckt"] == 0.05 and values["Schwelle schwach"] == 0.15
+    assert repr(values["Schwelle schwach"]) == "0.15"

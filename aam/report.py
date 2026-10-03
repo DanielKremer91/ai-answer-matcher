@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import re
 from typing import Optional, Sequence
 
 import pandas as pd
@@ -15,6 +16,11 @@ SHEETS = ("Seiten", "Themen", "Aussagen", "Chunks", "Protokoll")
 ORIGIN_LABELS = {OWN: "eigen", SOURCE: "Quelle"}
 METHOD_LABELS = {"structure": "Struktur", "semantic": "semantisch"}
 _SOURCE_COLUMNS = ["Beste Quell-URL", "Bester Quell-Chunk", "Score Quelle", "Delta"]
+_ILLEGAL_XML_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+_FORMULA_START = re.compile(r"^\s*[=+\-@]")
+_EXCEL_CELL_LIMIT = 32767
+_EXCEL_CUT_AT = 32750
+_TRUNCATION_MARK = " … [gekürzt]"
 
 
 def _frame(rows: list, columns: list[str], keyword: str) -> pd.DataFrame:
@@ -29,6 +35,37 @@ def _score(value: Optional[float]) -> Optional[float]:
 
 def _de(value: float, digits: int = 2) -> str:
     return f"{value:.{digits}f}".replace(".", ",")
+
+
+def _count(n: int, singular: str, plural: str) -> str:
+    """'1 Seite' / '2 Seiten'."""
+    return f"{n} {singular if n == 1 else plural}"
+
+
+def _words(value: float) -> str:
+    """Rounded word count with its noun: '1 Wort', '12 Wörter'."""
+    return _count(int(round(value)), "Wort", "Wörter")
+
+
+def _excel_safe(value):
+    """Make one cell safe for Excel: no illegal characters, no formulas, within the cell limit."""
+    if not isinstance(value, str):
+        return value
+    value = _ILLEGAL_XML_CHARS.sub("", value)
+    if len(value) > _EXCEL_CELL_LIMIT:
+        value = value[:_EXCEL_CUT_AT] + _TRUNCATION_MARK
+    if _FORMULA_START.match(value):
+        value = "'" + value
+    return value
+
+
+def _excel_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Copy of the frame with every text cell made Excel-safe (numbers untouched)."""
+    frame = frame.copy()
+    for column in frame.columns:
+        if frame[column].dtype == object or pd.api.types.is_string_dtype(frame[column]):
+            frame[column] = frame[column].map(_excel_safe)
+    return frame
 
 
 def pages_frame(result: Result) -> pd.DataFrame:
@@ -80,19 +117,22 @@ def answer_frame(answer: SegmentedAnswer) -> pd.DataFrame:
 
 
 def _stats_line(label: str, stats: ChunkStats) -> str:
-    line = (f"{label}: {stats.documents} Seiten → {stats.chunks} Chunks, Median {stats.median_words:.0f} Wörter "
+    line = (f"{label}: {_count(stats.documents, 'Seite', 'Seiten')} → {_count(stats.chunks, 'Chunk', 'Chunks')}, "
+            f"Median {_words(stats.median_words)} "
             f"(p10: {stats.p10_words:.0f}, p90: {stats.p90_words:.0f}), "
-            f"{stats.merged} Absätze zusammengelegt, {stats.split} Absätze geteilt")
+            f"{_count(stats.merged, 'Absatz', 'Absätze')} zusammengelegt, "
+            f"{_count(stats.split, 'Absatz', 'Absätze')} geteilt")
     if stats.empty_urls:
-        line += f", {len(stats.empty_urls)} Seiten ohne Text"
+        line += f", {_count(len(stats.empty_urls), 'Seite', 'Seiten')} ohne Text"
     return line
 
 
 def protocol_lines(answer: SegmentedAnswer, own_stats: ChunkStats, source_stats: Optional[ChunkStats],
                    failed: Sequence[FailedUrl], *, prechunked: bool = False) -> list[str]:
     lines = [
-        f"AI-Antwort: {len(answer.topics)} Themen, {len(answer.statements)} Aussagen, "
-        f"Median {answer.median_words:.0f} Wörter → Zielgröße {answer.target_words} Wörter "
+        f"AI-Antwort: {_count(len(answer.topics), 'Thema', 'Themen')}, "
+        f"{_count(len(answer.statements), 'Aussage', 'Aussagen')}, "
+        f"Median {_words(answer.median_words)} → Zielgröße {_words(answer.target_words)} "
         f"(Segmentierung: {METHOD_LABELS[answer.method]})",
         _stats_line("Eigener Content (aus Chunk-Embedding-Export)" if prechunked else "Eigener Content", own_stats),
     ]
@@ -114,8 +154,8 @@ def protocol_frame(result: Result) -> pd.DataFrame:
         ("Zielgröße (Wörter)", meta.target_words),
         ("Median Aussagenlänge (Wörter)", meta.median_words),
         ("Segmentierung", METHOD_LABELS[meta.method]),
-        ("Schwelle abgedeckt", meta.covered_delta),
-        ("Schwelle schwach", meta.weak_delta),
+        ("Schwelle abgedeckt", round(meta.covered_delta, 4)),
+        ("Schwelle schwach", round(meta.weak_delta, 4)),
     ]
     rows += [("Chunking", line) for line in protocol_lines(
         result.answer, result.own_stats, result.source_stats, meta.failed, prechunked=meta.prechunked)]
@@ -148,5 +188,5 @@ def to_excel(result: Result) -> bytes:
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         for name, frame in zip(SHEETS, frames):
-            frame.to_excel(writer, sheet_name=name, index=False)
+            _excel_frame(frame).to_excel(writer, sheet_name=name, index=False)
     return buffer.getvalue()
