@@ -24,6 +24,7 @@ MAX_LEAD_WORDS = 5
 MAX_STATEMENT_WORDS = 60
 MIN_FALLBACK_SENTENCES = 6
 INTRO_LABEL = "Einleitung"
+_SIMILARITY_EPS = 1e-6
 
 Embed = Callable[[list[str]], Sequence[Optional[np.ndarray]]]
 
@@ -68,14 +69,19 @@ def _parse_lines(text: str) -> list[_Line]:
     return lines
 
 
-def _is_heading(line: _Line, has_more: bool) -> bool:
-    if not has_more:
-        return False  # a heading needs text after it
+def _heading_like(line: _Line) -> bool:
+    return (not line.bullet and count_words(line.text) <= MAX_HEADING_WORDS
+            and not _SENTENCE_END.search(line.text))
+
+
+def _is_heading(line: _Line, following: Optional[_Line]) -> bool:
+    """A heading needs text after it. Unless it is marked up explicitly, the next line must be
+    running text (not itself heading-like), otherwise unpunctuated short lines become headings arbitrarily."""
+    if following is None:
+        return False
     if line.forced_heading:
         return True
-    if line.bullet:
-        return False
-    return count_words(line.text) <= MAX_HEADING_WORDS and not _SENTENCE_END.search(line.text)
+    return _heading_like(line) and not _heading_like(following)
 
 
 def _lead_in(line: _Line) -> Optional[re.Match]:
@@ -86,11 +92,11 @@ def _lead_in(line: _Line) -> Optional[re.Match]:
 
 
 def _structure_topics(lines: list[_Line]) -> list[_Draft]:
-    last = len(lines) - 1
-    explicit = any(_is_heading(line, i < last) or _lead_in(line) for i, line in enumerate(lines))
+    following = [lines[i + 1] if i + 1 < len(lines) else None for i in range(len(lines))]
+    explicit = any(_is_heading(line, following[i]) or _lead_in(line) for i, line in enumerate(lines))
     drafts: list[_Draft] = []
     for i, line in enumerate(lines):
-        if _is_heading(line, i < last):
+        if _is_heading(line, following[i]):
             drafts.append(_Draft(line.text.rstrip(":").strip(), forced=line.forced_heading))
             continue
         lead = _lead_in(line)
@@ -135,10 +141,12 @@ def _semantic_topics(sentences: list[str], embed: Embed) -> Optional[list[_Draft
     matrix = np.vstack(vectors).astype(np.float32)
     matrix /= np.maximum(np.linalg.norm(matrix, axis=1, keepdims=True), 1e-12)
     similarities = np.sum(matrix[:-1] * matrix[1:], axis=1)
+    if float(similarities.std()) < _SIMILARITY_EPS:
+        return None  # similarities barely vary: no meaningful topic change, keep the structural result
     threshold = float(similarities.mean() - similarities.std())
     groups = [[sentences[0]]]
     for sentence, similarity in zip(sentences[1:], similarities):
-        if similarity < threshold:
+        if similarity < threshold - _SIMILARITY_EPS:
             groups.append([sentence])
         else:
             groups[-1].append(sentence)

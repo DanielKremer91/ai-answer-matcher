@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 from aam.embeddings import embed_cached
@@ -85,8 +86,40 @@ def test_blank_lines_split_topics_only_without_explicit_markers():
 
 def test_short_lines_without_statements_are_kept_as_statements():
     answer = segment_answer("kw", "Dachdämmung\nFassadendämmung\nKellerdämmung")
-    assert sorted(s.text for s in answer.statements) == ["Dachdämmung", "Kellerdämmung"]
-    assert "Fassadendämmung" in labels(answer)
+    assert labels(answer) == [INTRO_LABEL]
+    assert [s.text for s in answer.statements] == ["Dachdämmung", "Fassadendämmung", "Kellerdämmung"]
+
+
+UNPUNCTUATED = [
+    "Eine Dachsanierung kostet je nach Umfang zwischen 100 und 300 Euro.",
+    "Die Kosten hängen von mehreren Faktoren ab",
+    "Dachfläche und Material",
+    "Die Fläche bestimmt den Preis pro Quadratmeter",
+    "Dämmung und Gerüst",
+    "Beides erhöht den Aufwand erheblich",
+]
+
+
+def test_unpunctuated_short_lines_are_not_headings_when_followed_by_heading_like_lines():
+    answer = segment_answer("kw", "\n".join(UNPUNCTUATED))
+    assert [(t.label, [s.text for s in t.statements]) for t in answer.topics] == [
+        (INTRO_LABEL, UNPUNCTUATED)]
+    assert answer.method == "structure"
+
+
+def test_real_heading_followed_by_bullet_or_punctuated_sentence_still_works():
+    text = "Kosten im Überblick\n- Die Neueindeckung kostet 100 Euro.\nFörderung\nDas BAFA zahlt Zuschüsse."
+    answer = segment_answer("kw", text)
+    assert [(t.label, [s.text for s in t.statements]) for t in answer.topics] == [
+        ("Kosten im Überblick", ["Die Neueindeckung kostet 100 Euro."]),
+        ("Förderung", ["Das BAFA zahlt Zuschüsse."]),
+    ]
+
+
+def test_forced_heading_stays_a_heading_before_another_heading_like_line():
+    answer = segment_answer("kw", "## Kosten\nDachfläche und Material\nBeides erhöht den Aufwand erheblich")
+    assert [(t.label, [s.text for s in t.statements]) for t in answer.topics] == [
+        ("Kosten", ["Dachfläche und Material", "Beides erhöht den Aufwand erheblich"])]
 
 
 def test_long_lines_are_split_into_sentences():
@@ -140,3 +173,20 @@ def test_target_comes_from_statements_and_can_be_overridden():
 def test_empty_answer_raises_german_error(text):
     with pytest.raises(ValueError, match="keine erkennbare Aussage"):
         segment_answer("kw", text)
+
+
+def test_identical_sentences_do_not_cause_a_semantic_split():
+    text = " ".join(["Die Kosten der Dachsanierung liegen bei 200 Euro."] * 6)
+    answer = segment_answer("kw", text, embed=fake_embed())
+    assert answer.method == "structure"
+    assert len(answer.topics) == 1
+
+
+def test_nearly_identical_embeddings_do_not_cause_a_semantic_split():
+    rng = np.random.default_rng(0)
+    base = rng.normal(size=16)
+    vectors = [base + rng.normal(scale=1e-4, size=16) for _ in range(8)]
+    text = " ".join(f"Die Kosten der Dachsanierung liegen bei {100 + i} Euro." for i in range(8))
+    answer = segment_answer("kw", text, embed=lambda texts: vectors)
+    assert answer.method == "structure"
+    assert len(answer.topics) == 1
