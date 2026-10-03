@@ -11,33 +11,49 @@ from aam.text import count_words, normalize_space, split_sentences
 
 
 def _windows(paragraph: str, target_words: int) -> list[str]:
-    """Sentence windows of about `target_words` words; each starts with the previous window's last sentence."""
+    """Sentence windows of at most 2 x `target_words` words (a single longer sentence stays whole).
+
+    Sentences are grouped greedily without overlap; every later window is preceded by the last
+    sentence of the previous group when that still fits the limit.
+    """
     limit = 2 * target_words
-    out: list[str] = []
+    groups: list[list[str]] = []
     current: list[str] = []
-    fresh = 0  # sentences in `current` that are not part of an emitted window yet
+    current_words = 0
     for sentence in split_sentences(paragraph):
-        if count_words(sentence) > limit:
-            if fresh:
-                out.append(" ".join(current))
-            out.append(sentence)  # cannot be cut any further
-            current, fresh = [], 0
-            continue
+        words = count_words(sentence)
+        if current and current_words + words > limit:
+            groups.append(current)
+            current, current_words = [], 0
         current.append(sentence)
-        fresh += 1
-        if sum(count_words(s) for s in current) >= target_words:
-            out.append(" ".join(current))
-            current, fresh = [sentence], 0
-    if fresh:
-        out.append(" ".join(current))
-    return out
+        current_words += words
+        if current_words >= target_words:
+            groups.append(current)
+            current, current_words = [], 0
+    if current:
+        groups.append(current)
+
+    def size(group: list[str]) -> int:
+        return sum(count_words(s) for s in group)
+
+    if len(groups) >= 2 and size(groups[-1]) < target_words / 2 and size(groups[-2]) + size(groups[-1]) <= limit:
+        last = groups.pop()
+        groups[-1] = groups[-1] + last
+
+    windows: list[str] = []
+    for i, group in enumerate(groups):
+        overlap = groups[i - 1][-1] if i else None
+        if overlap is not None and count_words(overlap) + size(group) <= limit:
+            group = [overlap, *group]
+        windows.append(" ".join(group))
+    return windows
 
 
 def chunk_document(doc: Document, target_words: int) -> tuple[list[Chunk], int, int]:
     """Return (chunks, merged paragraphs, split paragraphs) for one document."""
     limit = 2 * target_words
     half = target_words / 2
-    pieces: list[str] = []
+    pieces: list[tuple[str, bool]] = []  # (text, is a continuation window of a split paragraph)
     split = 0
     for line in doc.text.split("\n"):
         paragraph = normalize_space(line)
@@ -47,19 +63,23 @@ def chunk_document(doc: Document, target_words: int) -> tuple[list[Chunk], int, 
             windows = _windows(paragraph, target_words)
             if len(windows) > 1:
                 split += 1
-            pieces.extend(windows)
+            pieces.extend((w, i > 0) for i, w in enumerate(windows))
         else:
-            pieces.append(paragraph)
+            pieces.append((paragraph, False))
 
     texts: list[str] = []
+    continuation: list[bool] = []  # flag of the first piece of each text
     merged = 0
-    for piece in pieces:
-        if texts and count_words(texts[-1]) < half and count_words(texts[-1]) + count_words(piece) <= limit:
+    for piece, is_continuation in pieces:
+        if (texts and not is_continuation and count_words(texts[-1]) < half
+                and count_words(texts[-1]) + count_words(piece) <= limit):
             texts[-1] = f"{texts[-1]} {piece}"
             merged += 1
         else:
             texts.append(piece)
-    if len(texts) >= 2 and count_words(texts[-1]) < half and count_words(texts[-2]) + count_words(texts[-1]) <= limit:
+            continuation.append(is_continuation)
+    if (len(texts) >= 2 and not continuation[-1] and count_words(texts[-1]) < half
+            and count_words(texts[-2]) + count_words(texts[-1]) <= limit):
         tail = texts.pop()
         texts[-1] = f"{texts[-1]} {tail}"
         merged += 1
