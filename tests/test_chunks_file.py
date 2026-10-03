@@ -86,3 +86,60 @@ def test_check_dimension():
     check_dimension(chunks, 3)
     with pytest.raises(ChunkFileError, match="Dimension 3.*Dimension 1536"):
         check_dimension(chunks, 1536)
+
+
+def read_exported(data: bytes):
+    return read_chunks_file(io.BytesIO(data), "c.csv", provider="openai", model="text-embedding-3-small")
+
+
+def test_excel_resaved_export_with_semicolons_and_decimal_commas_is_accepted():
+    frame = pd.read_csv(io.BytesIO(exported()), dtype=str, keep_default_na=False)
+    for column in ("embedding_0", "embedding_1", "embedding_2"):
+        frame[column] = frame[column].str.replace(".", ",", regex=False)
+    frame["target_words"] = "27,0"
+    resaved = frame.to_csv(sep=";", index=False).encode("utf-8")
+    assert b"0,123457" in resaved
+    chunks, target = read_exported(resaved)
+    assert target == 27
+    assert chunks[0].vector.tolist() == approx([0.123457, -0.5, 0.25], abs=1e-6)
+    assert chunks[1].vector.tolist() == approx([1.0, 0.0, 0.0], abs=1e-6)
+    assert chunks[0].text == "Erster Chunk, mit Komma; und Semikolon"
+
+
+def test_unreadable_numbers_mention_the_excel_resave():
+    text = exported().decode("utf-8").replace("-0.5", "kaputt")
+    with pytest.raises(ChunkFileError, match="ohne ihn in Excel neu zu speichern"):
+        read_exported(text.encode("utf-8"))
+
+
+@pytest.mark.parametrize("bad", ["nan", "inf", "-inf"])
+def test_non_finite_embedding_values_are_rejected(bad):
+    text = exported().decode("utf-8").replace("-0.5", bad)
+    with pytest.raises(ChunkFileError, match="ungültige Zahlen"):
+        read_exported(text.encode("utf-8"))
+
+
+def test_empty_embedding_cell_is_rejected():
+    text = exported().decode("utf-8").replace("-0.5", "")
+    with pytest.raises(ChunkFileError, match="ungültige Zahlen"):
+        read_exported(text.encode("utf-8"))
+
+
+def test_infinite_chunk_index_is_rejected():
+    frame = pd.read_csv(io.BytesIO(exported()), dtype=str, keep_default_na=False)
+    frame.loc[0, "chunk_index"] = "inf"
+    with pytest.raises(ChunkFileError, match="ungültige Zahlen"):
+        read_exported(frame.to_csv(index=False).encode("utf-8"))
+
+
+def test_target_words_below_one_is_rejected():
+    with pytest.raises(ChunkFileError, match="ungültige Zahlen"):
+        read_exported(exported(target_words=0))
+
+
+def test_roundtrip_keeps_line_break_tab_and_pipe_in_the_text():
+    text = "Zeile eins\nZeile zwei\tmit Tab | und Pipe"
+    data = chunks_to_csv([Chunk("https://me.de/a", OWN, 0, text, 8, np.array([1.0, 2.0], dtype=np.float32))],
+                         provider="openai", model="text-embedding-3-small", target_words=20)
+    chunks, _ = read_exported(data)
+    assert chunks[0].text == text

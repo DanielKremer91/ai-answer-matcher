@@ -43,6 +43,32 @@ def chunks_to_csv(chunks: Sequence[Chunk], *, provider: str, model: str, target_
     return pd.concat([meta, vectors], axis=1).to_csv(index=False).encode("utf-8")
 
 
+INVALID_NUMBERS = ("Der Chunk-Embedding-Export enthält ungültige Zahlen. "
+                   "Bitte den Export unverändert hochladen, ohne ihn in Excel neu zu speichern.")
+
+
+def _parse_numbers(df: pd.DataFrame, embedding_columns: list[str], *,
+                   decimal_comma: bool) -> tuple[np.ndarray, int, list[int]]:
+    """Convert the numeric cells; ValueError/OverflowError when a cell is not a usable number."""
+
+    def number(value) -> float:
+        text = str(value).strip()
+        return float(text.replace(",", ".") if decimal_comma else text)
+
+    cells = df[embedding_columns].to_numpy(dtype=str)
+    if decimal_comma:
+        cells = np.char.replace(cells, ",", ".")
+    with np.errstate(over="ignore"):
+        matrix = cells.astype(np.float32)
+    if not np.isfinite(matrix).all():
+        raise ValueError("non-finite embedding value")
+    target = int(number(df["target_words"].iloc[0]))
+    if target < 1:
+        raise ValueError("target_words must be at least 1")
+    indices = [int(number(v)) for v in df["chunk_index"]]
+    return matrix, target, indices
+
+
 def chunks_from_frame(df: pd.DataFrame, *, provider: str, model: str) -> tuple[list[Chunk], int]:
     columns = [str(c) for c in df.columns]
     missing = [c for c in META_COLUMNS if c not in columns]
@@ -61,11 +87,13 @@ def chunks_from_frame(df: pd.DataFrame, *, provider: str, model: str) -> tuple[l
             f"Der Export wurde mit {described} erzeugt, eingestellt ist {provider} / {model}. "
             "Bitte Anbieter und Modell in der Seitenleiste anpassen oder den Content neu einbetten.")
     try:
-        matrix = df[embedding_columns].to_numpy(dtype=str).astype(np.float32)
-        target = int(float(df["target_words"].iloc[0]))
-        indices = [int(float(v)) for v in df["chunk_index"]]
-    except ValueError as exc:
-        raise ChunkFileError("Der Chunk-Embedding-Export enthält ungültige Zahlen.") from exc
+        matrix, target, indices = _parse_numbers(df, embedding_columns, decimal_comma=False)
+    except (ValueError, OverflowError):
+        # A file re-saved by German Excel has decimal commas; retry once with dots.
+        try:
+            matrix, target, indices = _parse_numbers(df, embedding_columns, decimal_comma=True)
+        except (ValueError, OverflowError) as exc:
+            raise ChunkFileError(INVALID_NUMBERS) from exc
     chunks = []
     for row, (url, text) in enumerate(zip(df["url"], df["text"])):
         text = str(text)
