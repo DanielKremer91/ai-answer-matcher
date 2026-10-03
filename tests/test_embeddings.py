@@ -14,6 +14,7 @@ OLLAMA_URL = "http://localhost:11434/api/embed"
 def test_constants():
     assert PROVIDERS == ("openai", "gemini", "ollama")
     assert set(DEFAULT_EMBED_MODELS) == set(PROVIDERS)
+    assert DEFAULT_EMBED_MODELS["ollama"] == "bge-m3"  # multilingual, needs no task prefix
 
 
 def test_unknown_provider():

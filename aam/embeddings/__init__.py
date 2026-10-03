@@ -17,7 +17,7 @@ PROVIDERS = ("openai", "gemini", "ollama")
 DEFAULT_EMBED_MODELS = {
     "openai": "text-embedding-3-small",
     "gemini": "gemini-embedding-001",
-    "ollama": "nomic-embed-text",
+    "ollama": "bge-m3",
 }
 
 
