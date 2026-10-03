@@ -31,6 +31,14 @@ uv pip install --python .venv/bin/python -r requirements.txt
 .venv/bin/streamlit run app.py
 ```
 
+Unter Windows (PowerShell):
+
+```powershell
+uv venv --python 3.11 .venv
+uv pip install --python .venv\Scripts\python.exe -r requirements.txt
+.venv\Scripts\streamlit run app.py
+```
+
 Mit vorhandenem Python 3.11:
 
 ```bash
@@ -39,11 +47,28 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+Unter Windows:
+
+```powershell
+py -3.11 -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+.venv\Scripts\streamlit run app.py
+```
+
+Die App ist nur vom eigenen Rechner aus erreichbar (`localhost`, siehe `.streamlit/config.toml`), nicht aus dem Netzwerk.
+
 Den API-Key trägst du in der Seitenleiste ein. Alternativ legst du neben `app.py` eine Datei `.env` an:
 
 ```text
 OPENAI_API_KEY=sk-...
 GEMINI_API_KEY=...
+```
+
+**Ollama (lokal, ohne API-Key).** Das Modell einmal laden und in der Seitenleiste den Anbieter „ollama“ wählen. Als Modellname steht dort `bge-m3` voreingestellt, ein mehrsprachiges Modell, das kein Aufgaben-Präfix braucht:
+
+```bash
+ollama pull bge-m3
 ```
 
 ## Ablauf
@@ -55,13 +80,35 @@ GEMINI_API_KEY=...
 
 Zum Ausprobieren liegen Beispieldateien in `examples/`.
 
+## Screaming-Frog-Export erstellen
+
+1. In Screaming Frog unter *Configuration → Custom → Custom Extraction* (XPath oder CSS-Selektor) oder *Custom JavaScript* einen Extraktor anlegen, der den Hauptinhalt der Seite liefert, ohne Navigation, Footer und Seitenleisten. Der Extraktor soll jeden Absatz als eigene Zeile ausgeben, denn daran schneidet das Tool die Chunks.
+2. Den Extraktor so benennen, dass die Spalte im Export „Extract Main Content 1“ heißt oder „Main Content“ enthält.
+3. Die Domain crawlen und den Tab mit der Custom Extraction als CSV oder Excel exportieren (Spalten `Address` und die Content-Spalte).
+4. Nur den thematisch relevanten Teil der Domain exportieren, zum Beispiel einen Ratgeber-Bereich. Das hält den Export klein und verfälscht die Auswertung nicht (siehe unten).
+
 ## Eingaben im Detail
 
 **Screaming-Frog-Export.** Erkannt werden URL-Spalten mit den Namen `Address`, `URL`, `Adresse`, `Page`, `Seite` und Content-Spalten wie `Extract Main Content 1`, `Main Content`, `Content`, `Text`, `Seiteninhalt`. Wichtig: Der Extraktor sollte Absätze als Zeilenumbrüche liefern, denn daran schneidet das Tool die Chunks.
 
+**AI-Antwort einfügen.**
+
+- Entferne Zeilen, die nicht zur Antwort gehören: Hinweise wie „KI-Antworten können Fehler enthalten“, Titel der Quellenkarten und Domainnamen.
+- Trage den API-Key ein, bevor du Schritt 3 startest. Hat die Antwort keine erkennbare Struktur, zerlegt das Tool sie nach Bedeutung und braucht dafür schon in Schritt 3 das Embedding-Modell.
+
 **Quell-URLs.** Werden per HTTP geladen, der Main Content kommt aus trafilatura. Seiten, die sich nicht laden lassen, stehen im Protokoll. Für solche Fälle kannst du den Content der Quellen auch als Datei im selben Format hochladen.
 
-**Ohne Quell-URLs** läuft die Analyse ebenfalls. Der Status zeigt dann nur die relative Stärke innerhalb deines eigenen Contents.
+**Ohne Quell-URLs** läuft die Analyse ebenfalls. Der Status zeigt dann nur die relative Stärke innerhalb deines eigenen Contents. Für diesen Status braucht es mindestens 4 Aussagen in der AI-Antwort, sonst bleibt er leer.
+
+## Datenschutz
+
+Mit OpenAI oder Gemini gehen die Texte der AI-Antwort, deines Contents und der Quellen an den jeweiligen Anbieter. Mit Ollama bleibt alles auf deinem Rechner. Die geladenen URLs ruft das Tool direkt von deinem Rechner ab.
+
+## Grenzen
+
+- **URL-Liste:** gedacht für eine Handvoll Seiten. Die URLs werden nacheinander geladen, mit 20 Sekunden Zeitlimit pro Seite. Für eine ganze Domain nimm den Frog-Export.
+- **Chunk-Embedding-Export:** rund 15 KB pro Chunk bei 1.536 Dimensionen, 5.000 Chunks sind etwa 70 MB. Das Upload-Limit liegt bei 1.000 MB.
+- **Abgebrochene Analyse** (zum Beispiel wegen eines Rate-Limits): Ein zweiter Klick auf „Analyse starten“ macht dort weiter, wo der erste aufgehört hat, denn bereits eingebettete Texte liegen im Cache der Sitzung.
 
 ## Ergebnisse
 
@@ -77,12 +124,14 @@ Das Excel enthält zusätzlich alle Chunks und ein Protokoll mit Datum, Modell, 
 
 ## Domain einmal einbetten, für viele Keywords nutzen
 
-Nach einer Analyse kannst du die **Chunk-Embeddings herunterladen**. Beim nächsten Keyword lädst du diese Datei statt des Frog-Exports hoch. Dann wird nur noch die AI-Antwort (und ggf. die Quellen) eingebettet. Anbieter und Modell müssen dieselben sein wie beim Export.
+Nach einer Analyse kannst du die **Chunk-Embeddings herunterladen**. Beim nächsten Keyword lädst du diese Datei statt des Frog-Exports hoch. Dann wird nur noch die AI-Antwort (und ggf. die Quellen) eingebettet. Anbieter und Modell müssen dieselben sein wie beim Export. Auch die Quellen werden dann mit der Chunk-Größe des Exports geschnitten, damit eigene Chunks und Quell-Chunks vergleichbar bleiben. Das steht im Protokoll.
 
 ## Was die Zahlen bedeuten und was nicht
 
 - **Ähnlichkeit ist notwendig, nicht hinreichend.** Ein hoher Score heißt nicht, dass Google dich zitiert. Rankings, Crawlbarkeit und Autorität entscheiden mit.
 - **Nicht auf den Score optimieren.** Die AI-Antwort ist aus den Quellen entstanden, die Quellen scoren deshalb zwangsläufig hoch. Wer die Antwort nachschreibt, liefert keinen Grund, zitiert zu werden. Nützlich sind die Lücken: Aussagen, zu denen dir eine eigenständige Passage fehlt.
+- **Der Vergleich ist größenabhängig.** Der beste eigene Chunk ist das Maximum über alle Chunks der Domain, der beste Quell-Chunk das Maximum über wenige Seiten. Je größer dein Export, desto leichter wird „abgedeckt“ erreicht. Beschränke den Export deshalb auf relevante Seiten.
+- **Gleiche Extraktion für einen fairen Benchmark.** Eigener Content aus dem Frog-Extraktor und Quellen aus der automatischen Extraktion (trafilatura) unterscheiden sich in dem, was als Boilerplate gilt. Für einen fairen Vergleich lade den Content der Quellen mit demselben Frog-Setup und lade ihn als Datei hoch.
 - **Momentaufnahme.** AI-Antworten ändern sich täglich und je nach Nutzer. Das Datum steht im Protokoll.
 - **Absolute Werte sind modellabhängig.** Vergleiche nur Läufe mit demselben Embedding-Modell.
 
