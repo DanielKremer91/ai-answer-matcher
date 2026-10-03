@@ -8,8 +8,8 @@ from urllib.parse import urlsplit, urlunsplit
 
 _SCHEME = re.compile(r"^https?://", re.IGNORECASE)
 _ANY_SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*://", re.IGNORECASE)
-_LEADING = "<>()\"'\u201e\u201c,;"
-_TRAILING = "<>()\"'\u201e\u201c,;."
+_LEADING = "<>\"'\u201e\u201c,;"  # round brackets are handled separately in _strip_wrappers
+_TRAILING = "<>\"'\u201e\u201c,;."
 
 
 def url_key(url: str) -> str:
@@ -23,13 +23,36 @@ def url_key(url: str) -> str:
     return f"{key}?{parts.query}" if parts.query else key
 
 
+def _strip_wrappers(token: str) -> str:
+    """Strip quotes, angle brackets and trailing punctuation; round brackets only when they do not belong to the URL.
+
+    A leading "(" goes when it is closed by the trailing ")" (surrounding pair) or when "(" outnumbers ")";
+    a trailing ")" goes when ")" outnumbers "(". So `Dach_(Bauwerk)` keeps its bracket.
+    """
+    while True:
+        stripped = token.lstrip(_LEADING).rstrip(_TRAILING)
+        if stripped.startswith("(") and (stripped.endswith(")") or stripped.count("(") > stripped.count(")")):
+            stripped = stripped[1:]
+            if stripped.count(")") > stripped.count("("):
+                stripped = stripped[:-1]
+        elif stripped.endswith(")") and stripped.count(")") > stripped.count("("):
+            stripped = stripped[:-1]
+        if stripped == token:
+            return token
+        token = stripped
+
+
+def _is_mail(token: str) -> bool:
+    return token.lower().startswith("mailto:") or ("@" in token and "/" not in token)
+
+
 def parse_urls(text: Optional[str]) -> list[str]:
     """URLs in input order, without fragments and duplicates; tokens without a dotted host are dropped."""
     urls: list[str] = []
     seen: set[str] = set()
     for token in (text or "").split():
-        token = token.lstrip(_LEADING).rstrip(_TRAILING)
-        if not token or "@" in token:
+        token = _strip_wrappers(token)
+        if not token or _is_mail(token):
             continue
         if not _SCHEME.match(token):
             token = f"https://{token}"

@@ -32,3 +32,18 @@ def test_parse_urls_skips_malformed_tokens():
 def test_parse_urls_strips_wrappers_and_drops_mail_addresses():
     assert parse_urls("<https://a.de/x>, (b.de/y). mailto:x@a.de") == ["https://a.de/x", "https://b.de/y"]
     assert parse_urls("\u201ea.de/q\u201c 'c.de/r'") == ["https://a.de/q", "https://c.de/r"]
+
+
+def test_parse_urls_keeps_brackets_that_belong_to_the_url():
+    wiki = "https://de.wikipedia.org/wiki/Dach_(Bauwerk)"
+    assert parse_urls(wiki) == [wiki]
+    assert parse_urls(f"({wiki})") == [wiki]
+    assert parse_urls(f"({wiki}).") == [wiki]
+    assert parse_urls("(b.de/y).") == ["https://b.de/y"]
+    assert parse_urls("(https://b.de/y)") == ["https://b.de/y"]
+
+
+def test_parse_urls_keeps_at_signs_in_urls_but_drops_mail_addresses():
+    assert parse_urls("https://medium.com/@user/post") == ["https://medium.com/@user/post"]
+    assert parse_urls("medium.com/@user") == ["https://medium.com/@user"]
+    assert parse_urls("MAILTO:x@a.de x@a.de") == []
