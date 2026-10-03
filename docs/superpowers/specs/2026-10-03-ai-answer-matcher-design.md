@@ -83,7 +83,9 @@ Zwei Ebenen: Thema und Aussage.
 
 - einer Überschriftenzeile: höchstens 10 Wörter, kein Satzendezeichen am Ende, gefolgt von weiterem Text; Markdown-Präfixe (`#`, `**…**`) werden entfernt;
 - einer Zeile mit fettem oder kurzem Einleitungswort vor einem Doppelpunkt (höchstens 5 Wörter vor dem Doppelpunkt, danach Text). Das Einleitungswort wird das Themenlabel, der Rest die erste Aussage;
-- einer Leerzeile zwischen zwei Blöcken, wenn der folgende Block nicht mit einem Aufzählungszeichen an eine Liste anschließt.
+- einer Leerzeile zwischen zwei Blöcken, wenn der folgende Block nicht mit einem Aufzählungszeichen an eine Liste anschließt. Diese Regel gilt nur, wenn die Antwort weder Überschriften noch Einleitungswörter enthält. Gibt es solche Marker, bestimmen allein sie die Themen, sonst würde ein zweiter Absatz unter einer Überschrift aus seinem Thema gerissen.
+
+Eine Überschriftenzeile ohne folgende Aussage (etwa kurze Listenpunkte ohne Satzzeichen) geht nicht verloren: ihr Text wird zur Aussage des vorangehenden Themas.
 
 Text vor der ersten erkannten Grenze bildet das Thema "Einleitung". Aufzählungszeichen und Nummerierungen werden entfernt.
 
@@ -158,7 +160,7 @@ Hauptbereich in vier Schritten, jeder wird aktiv, wenn der vorige vollständig i
    - drei Beispiel-Chunks des eigenen Contents;
    - die Anzahl Texte, die im nächsten Schritt eingebettet werden.
    Die Zielgröße kann hier geändert und neu gechunkt werden, ohne Embedding-Kosten. Einzige Ausnahme: Greift der semantische Fallback der Segmentierung, werden in diesem Schritt die Sätze der AI-Antwort eingebettet (wenige Dutzend Texte, danach im Cache).
-4. **Analysieren:** Embedding mit Fortschrittsbalken, Matching, dann Zusammenfassung, drei Tabellen und zwei Downloads (Excel, Chunk-Embedding-Export).
+4. **Analysieren:** Embedding mit Fortschrittsbalken, Matching, dann Zusammenfassung, drei Tabellen und zwei Downloads (Excel, Chunk-Embedding-Export). Der Chunk-Embedding-Export entfällt, wenn der eigene Content selbst aus einem solchen Export kam. Geänderte Schwellen werden ohne neues Embedding auf das vorhandene Ergebnis angewendet.
 
 Zusammenfassung in zwei Sätzen: relevanteste eigene Seite mit Seitenscore und Rang, Anzahl abgedeckter Aussagen, Themen mit Lücken.
 
@@ -176,7 +178,7 @@ Jedes Blatt hat `Keyword/Prompt` als erste Spalte.
 | Chunks | Herkunft, URL, Chunk-Index, Text, Wortzahl (AI-Aussagen, eigene Chunks und Quell-Chunks; ohne Vektoren) |
 | Protokoll | Datum, Provider, Modell, Dimension, Zielgröße, Segmentierungsmethode, Schwellen, Chunk-Statistiken, nicht geladene URLs mit Grund |
 
-Ohne Quellen entfallen die Quell-Spalten und Delta. Scores mit vier Nachkommastellen.
+Ohne Quellen entfallen die Quell-Spalten und Delta, und die Spalte "Aussagen abgedeckt" im Blatt Seiten heißt "Aussagen mit bestem Chunk". Scores mit vier Nachkommastellen.
 
 ## 11. Fehlerbehandlung
 
