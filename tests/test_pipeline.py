@@ -285,3 +285,27 @@ def test_source_with_tracking_parameters_is_recognised_as_an_own_page():
     assert prepared.warnings == (
         "https://me.de/kosten/?utm_source=chatgpt.com gehört zum eigenen Content und wird nicht als Quelle gewertet.",)
     assert {c.url for c in prepared.source_chunks} == {"https://quelle.de/foerderung"}
+
+
+LONG_SOURCE = Document("https://quelle.de/lang", " ".join(
+    f"Satz {n} erklärt, wie eine Dachsanierung geplant wird." for n in range(1, 8)), SOURCE)  # one 56-word paragraph
+
+
+def test_sources_are_cut_with_the_stored_target_for_reused_chunks():
+    first = sample_result()
+    own_size = prepare(KEYWORD, ANSWER, own_docs=OWN_DOCS, source_docs=[LONG_SOURCE])
+    assert own_size.source_target_words == 15 and len(own_size.source_chunks) > 1
+    prepared = prechunked(first, stored_target=40, source_docs=[LONG_SOURCE])
+    assert prepared.answer.target_words == 15
+    assert prepared.source_target_words == 40
+    assert [c.words for c in prepared.source_chunks] == [56]  # whole paragraph: limit is 2 x 40 words
+    assert len(prepared.warnings) == 1 and "Zielgröße 40" in prepared.warnings[0]  # deviation warning stays
+    assert analyze(prepared, FakeProvider(), None).meta.source_target_words == 40
+
+
+def test_source_target_equals_the_answer_target_without_a_reused_export():
+    assert prepare(KEYWORD, ANSWER, own_docs=OWN_DOCS, source_docs=SOURCE_DOCS).source_target_words == 15
+    assert prechunked(sample_result()).source_target_words == 15
+    assert prepare(KEYWORD, ANSWER, own_docs=OWN_DOCS, target_override=60).source_target_words == 60
+    result = sample_result()
+    assert result.meta.source_target_words == 15

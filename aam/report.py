@@ -8,7 +8,7 @@ from typing import Optional, Sequence
 
 import pandas as pd
 
-from aam.match import STATUS_COVERED, STATUS_GAP
+from aam.match import MIN_STATEMENTS_FOR_QUARTILES, STATUS_COVERED, STATUS_GAP
 from aam.models import OWN, SOURCE, ChunkStats, FailedUrl, Result, SegmentedAnswer
 
 KEYWORD_COLUMN = "Keyword/Prompt"
@@ -21,6 +21,7 @@ _FORMULA_START = re.compile(r"^\s*[=+\-@]")
 _EXCEL_CELL_LIMIT = 32767
 _EXCEL_CUT_AT = 32750
 _TRUNCATION_MARK = " … [gekürzt]"
+MAX_EMPTY_URLS_SHOWN = 20  # per origin
 
 
 def _frame(rows: list, columns: list[str], keyword: str) -> pd.DataFrame:
@@ -127,19 +128,40 @@ def _stats_line(label: str, stats: ChunkStats) -> str:
     return line
 
 
+def _prechunked_line(stats: ChunkStats) -> str:
+    """Merge and split counts are unknown for an uploaded export, so they are left out."""
+    return (f"Eigener Content (aus Chunk-Embedding-Export): {_count(stats.documents, 'Seite', 'Seiten')} → "
+            f"{_count(stats.chunks, 'Chunk', 'Chunks')}, Median {_words(stats.median_words)} "
+            f"(p10: {stats.p10_words:.0f}, p90: {stats.p90_words:.0f})")
+
+
+def _empty_lines(origin: str, urls: Sequence[str]) -> list[str]:
+    lines = [f"Ohne Text ({ORIGIN_LABELS[origin]}): {url}" for url in urls[:MAX_EMPTY_URLS_SHOWN]]
+    if len(urls) > MAX_EMPTY_URLS_SHOWN:
+        lines.append(f"… und {len(urls) - MAX_EMPTY_URLS_SHOWN} weitere")
+    return lines
+
+
 def protocol_lines(answer: SegmentedAnswer, own_stats: ChunkStats, source_stats: Optional[ChunkStats],
-                   failed: Sequence[FailedUrl], *, prechunked: bool = False) -> list[str]:
+                   failed: Sequence[FailedUrl], *, prechunked: bool = False,
+                   source_target_words: Optional[int] = None) -> list[str]:
     lines = [
         f"AI-Antwort: {_count(len(answer.topics), 'Thema', 'Themen')}, "
         f"{_count(len(answer.statements), 'Aussage', 'Aussagen')}, "
         f"Median {_words(answer.median_words)} → Zielgröße {_words(answer.target_words)} "
         f"(Segmentierung: {METHOD_LABELS[answer.method]})",
-        _stats_line("Eigener Content (aus Chunk-Embedding-Export)" if prechunked else "Eigener Content", own_stats),
+        _prechunked_line(own_stats) if prechunked else _stats_line("Eigener Content", own_stats),
     ]
     if source_stats is None:
         lines.append("Quellen: keine. Der Status zeigt die relative Stärke innerhalb des eigenen Contents.")
     else:
-        lines.append(_stats_line("Quellen", source_stats))
+        line = _stats_line("Quellen", source_stats)
+        if source_target_words and source_target_words != answer.target_words:
+            line += f", geschnitten mit Zielgröße {_words(source_target_words)} wie der hochgeladene Export"
+        lines.append(line)
+    lines += _empty_lines(OWN, own_stats.empty_urls)
+    if source_stats is not None:
+        lines += _empty_lines(SOURCE, source_stats.empty_urls)
     lines += [f"Nicht geladen ({ORIGIN_LABELS[f.origin]}): {f.url} ({f.reason})" for f in failed]
     return lines
 
@@ -158,7 +180,8 @@ def protocol_frame(result: Result) -> pd.DataFrame:
         ("Schwelle schwach", round(meta.weak_delta, 4)),
     ]
     rows += [("Chunking", line) for line in protocol_lines(
-        result.answer, result.own_stats, result.source_stats, meta.failed, prechunked=meta.prechunked)]
+        result.answer, result.own_stats, result.source_stats, meta.failed, prechunked=meta.prechunked,
+        source_target_words=meta.source_target_words or None)]
     rows += [("Hinweis", warning) for warning in meta.warnings]
     return _frame(rows, ["Angabe", "Wert"], meta.keyword)
 
@@ -171,7 +194,9 @@ def summary(result: Result) -> str:
     if not matched.has_sources:
         return (f"{text} Sie stellt bei {top.covered} von {top.total} Aussagen den besten Chunk der Domain. "
                 "Ohne Quellen gibt es keinen Benchmark: der Status zeigt nur die relative Stärke "
-                "innerhalb des eigenen Contents.")
+                "innerhalb des eigenen Contents."
+                + (f" Für einen Status sind mindestens {MIN_STATEMENTS_FOR_QUARTILES} Aussagen oder Quell-URLs nötig."
+                   if len(matched.statements) < MIN_STATEMENTS_FOR_QUARTILES else ""))
     covered = sum(m.status == STATUS_COVERED for m in matched.statements)
     text += (f" Über die ganze Domain sind {covered} von {top.total} Aussagen abgedeckt, "
              f"diese Seite allein deckt {top.covered} ab.")

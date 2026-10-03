@@ -30,6 +30,7 @@ class Prepared:
     failed: tuple[FailedUrl, ...]
     warnings: tuple[str, ...]
     prechunked: bool  # own chunks carry vectors from an uploaded export
+    source_target_words: int  # chunk size actually used for the sources
 
     @property
     def texts_to_embed(self) -> int:
@@ -65,10 +66,13 @@ def prepare(keyword: str, answer_text: str, *, own_docs: Sequence[Document] = ()
         raise ValueError("Bitte die AI-Antwort einfügen.")
     answer = segment_answer(keyword, answer_text, target_override=target_override, embed=embed)
     warnings: list[str] = []
+    source_target = answer.target_words
     if own_chunks is not None:
         chunks = list(own_chunks)
         own_stats = stats_for(chunks, documents=len({c.url for c in chunks}))
         target = answer.target_words
+        if stored_target:
+            source_target = stored_target  # sources and reused chunks share one granularity
         if stored_target and abs(stored_target - target) / target > MAX_TARGET_DEVIATION:
             warnings.append(
                 f"Die hochgeladenen Chunks wurden mit Zielgröße {stored_target} Wörter geschnitten, "
@@ -91,9 +95,9 @@ def prepare(keyword: str, answer_text: str, *, own_docs: Sequence[Document] = ()
     source_chunks: list[Chunk] = []
     source_stats = None
     if benchmarks:
-        source_chunks, source_stats = chunk_documents(benchmarks, answer.target_words)
+        source_chunks, source_stats = chunk_documents(benchmarks, source_target)
     return Prepared(answer, chunks, source_chunks, own_stats, source_stats, tuple(failed), tuple(warnings),
-                    own_chunks is not None)
+                    own_chunks is not None, source_target)
 
 
 class _StagedEmbedder:
@@ -179,6 +183,7 @@ def analyze(prepared: Prepared, provider: EmbeddingProvider, cache, *, covered_d
         failed=tuple(prepared.failed),
         warnings=tuple(warnings),
         prechunked=prepared.prechunked,
+        source_target_words=prepared.source_target_words,
     )
     return Result(meta, matched, prepared.answer, own, sources, prepared.own_stats, prepared.source_stats,
                   list(statement_vectors))

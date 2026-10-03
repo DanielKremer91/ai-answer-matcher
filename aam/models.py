@@ -138,6 +138,7 @@ class RunMeta:
     failed: tuple[FailedUrl, ...]
     warnings: tuple[str, ...]
     prechunked: bool = False  # own content came from a chunk-embedding export
+    source_target_words: int = 0  # chunk size used for the sources; 0 = same as target_words
 
 
 @dataclass(frozen=True)

@@ -187,3 +187,71 @@ def test_protocol_thresholds_are_rounded():
     values = dict(zip(protocol_frame(result)["Angabe"], protocol_frame(result)["Wert"]))
     assert values["Schwelle abgedeckt"] == 0.05 and values["Schwelle schwach"] == 0.15
     assert repr(values["Schwelle schwach"]) == "0.15"
+
+
+def test_protocol_line_names_the_source_target_when_it_follows_the_export():
+    result = sample_result()
+    lines = protocol_lines(result.answer, result.own_stats, result.source_stats, [], prechunked=True,
+                           source_target_words=40)
+    assert lines[2].endswith(", geschnitten mit Zielgröße 40 Wörter wie der hochgeladene Export")
+    assert lines[2].startswith("Quellen: 1 Seite → 2 Chunks")
+    for same in (None, 15):
+        plain = protocol_lines(result.answer, result.own_stats, result.source_stats, [], source_target_words=same)
+        assert "geschnitten mit" not in plain[2]
+    without_sources = protocol_lines(result.answer, result.own_stats, None, [], source_target_words=40)
+    assert "geschnitten mit" not in without_sources[2]
+
+
+def test_protocol_frame_shows_the_source_target():
+    result = sample_result()
+    meta = replace(result.meta, source_target_words=40, prechunked=True)
+    lines = list(protocol_frame(replace(result, meta=meta))["Wert"])
+    assert any("geschnitten mit Zielgröße 40 Wörter wie der hochgeladene Export" in str(line) for line in lines)
+    same = replace(result, meta=replace(result.meta, source_target_words=0))
+    assert not any("geschnitten mit" in str(line) for line in protocol_frame(same)["Wert"])
+
+
+def test_prechunked_protocol_line_has_no_merge_and_split_counts():
+    result = sample_result()
+    lines = protocol_lines(result.answer, _stats(3, 7, 2, 1, median=12.4), None, [], prechunked=True)
+    assert lines[1] == ("Eigener Content (aus Chunk-Embedding-Export): 3 Seiten → 7 Chunks, "
+                        "Median 12 Wörter (p10: 1, p90: 1)")
+    single = protocol_lines(result.answer, _stats(1, 1, 0, 0, median=1.0), None, [], prechunked=True)
+    assert single[1] == ("Eigener Content (aus Chunk-Embedding-Export): 1 Seite → 1 Chunk, "
+                         "Median 1 Wort (p10: 1, p90: 1)")
+
+
+def test_pages_without_text_are_listed_per_origin_and_capped():
+    result = sample_result()
+    own = _stats(5, 0, 0, 0, tuple(f"https://me.de/leer{i}" for i in range(22)))
+    source = _stats(2, 1, 0, 0, ("https://quelle.de/leer",))
+    failed = [FailedUrl("https://quelle.de/x", SOURCE, "HTTP 403")]
+    lines = protocol_lines(result.answer, own, source, failed)
+    empties = lines[3:-1]  # between the stats lines and the failed URLs
+    assert len(empties) == 22
+    assert empties[0] == "Ohne Text (eigen): https://me.de/leer0"
+    assert empties[19] == "Ohne Text (eigen): https://me.de/leer19"
+    assert empties[20] == "… und 2 weitere"
+    assert empties[21] == "Ohne Text (Quelle): https://quelle.de/leer"
+    assert lines[-1] == "Nicht geladen (Quelle): https://quelle.de/x (HTTP 403)"
+
+
+def test_pages_without_text_reach_the_excel_protocol_sheet():
+    result = sample_result()
+    result = replace(result, own_stats=_stats(3, 3, 0, 0, ("https://me.de/leer",)))
+    assert "Ohne Text (eigen): https://me.de/leer" in list(protocol_frame(result)["Wert"])
+    sheet = pd.read_excel(io.BytesIO(to_excel(result)), sheet_name="Protokoll")
+    assert "Ohne Text (eigen): https://me.de/leer" in list(sheet["Wert"])
+
+
+def test_summary_hints_at_the_minimum_when_no_status_can_be_given():
+    from aam.pipeline import analyze, prepare
+    from tests.fakes import OWN_DOCS, FakeProvider
+
+    short = "Eine Dachsanierung kostet viel.\nSie dauert mehrere Wochen.\nDie Planung braucht Zeit."
+    prepared = prepare("dach", short, own_docs=OWN_DOCS)
+    result = analyze(prepared, FakeProvider(), None)
+    assert len(result.match.statements) == 3 and not result.match.has_sources
+    assert summary(result).endswith(" Für einen Status sind mindestens 4 Aussagen oder Quell-URLs nötig.")
+    assert "mindestens 4 Aussagen" not in summary(sample_result(with_sources=False))  # 5 statements
+    assert "mindestens 4 Aussagen" not in summary(sample_result())
