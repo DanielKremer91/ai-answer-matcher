@@ -23,7 +23,10 @@ RUN_ERRORS = (ValueError, embeddings.EmbeddingError)
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 st.set_page_config(page_title="AI Answer Matcher", layout="wide")
-load_env_file(Path(__file__).resolve().parent / ".env")
+try:
+    load_env_file(Path(__file__).resolve().parent / ".env")
+except (OSError, UnicodeDecodeError):
+    st.warning("Die Datei .env konnte nicht gelesen werden und wird ignoriert.")
 state = st.session_state
 state.setdefault("cache", MemoryCache())
 state.setdefault("fetched", {})  # (origin, url key) -> Document; fetched pages survive re-chunking
@@ -90,7 +93,7 @@ def parse_upload(file, origin: str, slot: str):
     if file is None:
         state.pop(slot, None)
         return None
-    signature = (file.name, file.size, provider_name, model)
+    signature = (file.name, file.size, getattr(file, "file_id", None), provider_name, model)
     cached = state.get(slot)
     if cached and cached["sig"] == signature:
         return cached
@@ -131,11 +134,13 @@ def fetch_missing(urls, origin: str, known: set):
     failed = []
     if todo:
         bar = st.progress(0.0, text=f"Lade {len(todo)} URLs …")
-        with httpx.Client() as client:
-            docs, failed = extract.fetch_documents(
-                todo, origin, client,
-                progress=lambda done, total: bar.progress(done / total, text=f"Lade URL {done} von {total} …"))
-        bar.empty()
+        try:
+            with httpx.Client() as client:
+                docs, failed = extract.fetch_documents(
+                    todo, origin, client,
+                    progress=lambda done, total: bar.progress(done / total, text=f"Lade URL {done} von {total} …"))
+        finally:
+            bar.empty()
         for doc in docs:
             state["fetched"][(origin, url_key(doc.url))] = doc
     found = [state["fetched"][(origin, url_key(u))] for u in wanted if (origin, url_key(u)) in state["fetched"]]
@@ -151,11 +156,12 @@ def cached_bytes(slot: str, key, build):
     return entry[1]
 
 
-def show_result(result) -> None:
+def show_result(result, shown_warnings=()) -> None:
     st.subheader("Ergebnis")
     st.markdown(report.summary(result))
     for warning in result.meta.warnings:
-        st.warning(warning)
+        if warning not in shown_warnings:  # warnings from the chunking step are already on screen
+            st.warning(warning)
     tab_pages, tab_topics, tab_statements = st.tabs(["Seiten", "Themen", "Aussagen"])
     with tab_pages:
         st.caption("Ganze AI-Antwort gegen ganze Seite. Eigene Seiten und Quellen in einem Ranking.")
@@ -249,6 +255,8 @@ if st.button("Segmentieren und chunken", disabled=not ready, type="primary"):
         )
         state["prepared_sig"] = input_signature()
         state.pop("result", None)
+        state.pop("excel", None)  # downloads belong to the previous result
+        state.pop("chunks_csv", None)
     except RUN_ERRORS as exc:
         state.pop("prepared", None)
         st.error(str(exc))
@@ -261,7 +269,7 @@ if prepared is not None and not fresh:
 if fresh:
     st.code("\n".join(report.protocol_lines(
         prepared.answer, prepared.own_stats, prepared.source_stats, prepared.failed,
-        prechunked=prepared.prechunked)), language=None)
+        prechunked=prepared.prechunked)), language=None, wrap_lines=True)
     for warning in prepared.warnings:
         st.warning(warning)
     st.markdown("**AI-Chunks:** so wurde die Antwort in Themen und Aussagen zerlegt")
@@ -274,6 +282,7 @@ if fresh:
 
 st.header("4. Analysieren")
 if st.button("Analyse starten", disabled=not fresh, type="primary"):
+    bar = None
     try:
         provider = make_provider()
         bar = st.progress(0.0, text="Embeddings werden erstellt …")
@@ -281,14 +290,18 @@ if st.button("Analyse starten", disabled=not fresh, type="primary"):
             prepared, provider, state["cache"], covered_delta=covered_delta, weak_delta=weak_delta,
             progress=lambda done, total: bar.progress(done / max(total, 1),
                                                       text=f"Embeddings: {done} von {total} Texten"))
-        bar.empty()
         state["result_sig"] = state["prepared_sig"]
+        state.pop("excel", None)  # a new result must not be served with the old download bytes
+        state.pop("chunks_csv", None)
     except RUN_ERRORS as exc:
         state.pop("result", None)
         st.error(f"Analyse fehlgeschlagen: {exc}")
+    finally:
+        if bar is not None:
+            bar.empty()
 
 result = state.get("result")
 if result is not None and fresh and state.get("result_sig") == state.get("prepared_sig"):
     if (result.meta.covered_delta, result.meta.weak_delta) != (covered_delta, weak_delta):
         result = state["result"] = pipeline.rematch(result, covered_delta=covered_delta, weak_delta=weak_delta)
-    show_result(result)
+    show_result(result, shown_warnings=prepared.warnings)

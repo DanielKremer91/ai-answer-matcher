@@ -1,11 +1,13 @@
+import io
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
 from aam.embeddings import EmbeddingError
 from aam.ingest.chunks_file import chunks_to_csv
-from aam.models import OWN, SOURCE, FailedUrl
+from aam.models import OWN, SOURCE, Document, FailedUrl
 from tests.fakes import ANSWER, OWN_DOCS, SOURCE_DOCS, FakeProvider, sample_result
 
 APP = str(Path(__file__).resolve().parent.parent / "app.py")
@@ -32,6 +34,7 @@ def backend(monkeypatch):
         failed = [FailedUrl(u, origin, "HTTP 403") for u in urls if u not in known]
         return docs, failed
 
+    provider.known = known  # tests may add pages to let a previously failing URL load
     monkeypatch.setattr("aam.embeddings.make_provider", lambda *args, **kwargs: provider)
     monkeypatch.setattr("aam.extract.fetch_documents", fetch)
     return provider
@@ -234,3 +237,60 @@ def test_table_without_content_column_shows_the_found_columns():
     at.run()
     assert any("Gefunden: Foo, Bar" in e.value for e in at.error)
     assert button(at, CHUNK_BUTTON).disabled is True
+
+
+def excel_sheet(data: bytes, sheet: str) -> pd.DataFrame:
+    return pd.read_excel(io.BytesIO(data), sheet_name=sheet)
+
+
+def test_rerun_with_identical_inputs_does_not_serve_stale_downloads(backend):
+    url = "https://neu.de/quelle"
+    at = analyzed(source_urls=url)
+    assert not at.exception and not at.error
+    assert "Nicht geladen (Quelle): https://neu.de/quelle (HTTP 403)" in at.code[0].value
+    first = at.session_state["excel"][1]
+    assert "Quelle" not in set(excel_sheet(first, "Seiten")["Herkunft"])
+
+    backend.known[url] = Document(url, SOURCE_DOCS[0].text, SOURCE)  # the URL loads now
+    button(at, CHUNK_BUTTON).click()
+    at.run()
+    button(at, ANALYZE_BUTTON).click()
+    at.run()
+    assert not at.exception and not at.error
+    assert at.session_state["result"].match.has_sources is True
+    second = at.session_state["excel"][1]
+    assert second != first
+    assert "Quelle" in set(excel_sheet(second, "Seiten")["Herkunft"])
+
+
+class FlakyProvider(FakeProvider):
+    """Embeds fine until armed, then fails like a server outage."""
+
+    armed = False
+
+    def _embed_batch(self, texts):
+        if self.armed:
+            raise EmbeddingError("fake: HTTP 500")
+        return super()._embed_batch(texts)
+
+
+def test_failed_analysis_shows_the_error_and_leaves_no_progress_bar(monkeypatch):
+    provider = FlakyProvider()
+    monkeypatch.setattr("aam.embeddings.make_provider", lambda *args, **kwargs: provider)
+    at = chunked()
+    assert not at.exception and not at.error
+    provider.armed = True
+    button(at, ANALYZE_BUTTON).click()
+    at.run()
+    assert not at.exception
+    assert any("Analyse fehlgeschlagen" in e.value and "fake: HTTP 500" in e.value for e in at.error)
+    assert len(at.get("progress")) == 0
+    assert not has_state(at, "result")
+
+
+def test_prepare_warning_is_shown_once_after_a_full_analysis():
+    at = analyzed(source_urls="https://me.de/kosten")
+    assert not at.exception and not at.error
+    assert has_state(at, "result")
+    warnings = [w.value for w in at.warning if "gehört zum eigenen Content" in w.value]
+    assert len(warnings) == 1
