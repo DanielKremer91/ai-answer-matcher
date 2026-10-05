@@ -76,7 +76,7 @@ ollama pull bge-m3
 1. **AI-Antwort:** Keyword oder Prompt eintragen, den Antworttext aus AI Overview oder AI Mode einfügen. Optional die zitierten Quell-URLs, eine pro Zeile.
 2. **Eigener Content:** Screaming-Frog-Export hochladen (Spalten für URL und Main Content, CSV oder Excel) oder eigene URLs eintragen, die das Tool selbst lädt. Beides lässt sich kombinieren, bei gleicher URL gewinnt der Export.
 3. **Chunking prüfen:** Das Tool zeigt, wie es die AI-Antwort in Themen und Aussagen zerlegt hat, welche Chunk-Größe daraus folgt und wie viele Chunks aus deinem Content entstanden sind. Bis hierhin entstehen keine Embedding-Kosten, außer die Antwort hat keine erkennbare Struktur: dann werden ihre Sätze schon hier eingebettet, um Themengrenzen zu finden.
-4. **Analysieren:** Embeddings werden erstellt, danach erscheinen Zusammenfassung, drei Tabellen und die Downloads.
+4. **Analysieren:** Embeddings werden erstellt, danach erscheinen Zusammenfassung, vier Tabellen und die Downloads.
 
 Zum Ausprobieren liegen Beispieldateien in `examples/`.
 

@@ -220,7 +220,7 @@ Pflichtfälle:
 - Lauf ohne Quell-URLs: läuft durch, Quell-Spalten fehlen, Status aus Perzentilen, bei weniger als 4 Aussagen kein Status.
 - Lauf, bei dem alle Quell-URLs scheitern: verhält sich wie ohne Quellen und nennt die URLs im Protokoll.
 - Chunk-Embedding-Export: Export und Wiedereinlesen ergeben identische Ergebnisse; falsches Modell oder falsche Dimension werden abgelehnt; abweichende Zielgröße warnt.
-- Excel: fünf Blätter, Keyword in der ersten Spalte jedes Blatts.
+- Excel: sechs Blätter, Keyword in der ersten Spalte jedes Blatts.
 - Frog bei doppelter URL vor URL-Liste.
 
 ## 14. Repo
