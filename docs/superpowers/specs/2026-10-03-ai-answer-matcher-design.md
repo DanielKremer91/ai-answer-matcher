@@ -2,7 +2,7 @@
 
 Datum: 2026-10-03
 Status: Entwurf zur Freigabe
-Kontext: Tool für einen SEOKomm-Vortrag. Es wird als offenes GitHub-Repo an die Zuhörer weitergegeben. Schwesterprojekt des Broken Link Matcher (`/Users/Daniel/Downloads/broken-link-matcher`), dessen Muster und Provider-Schicht übernommen werden.
+Kontext: Tool für einen SEOKomm-Vortrag. Es wird als offenes GitHub-Repo an die Zuhörer weitergegeben. Schwesterprojekt des Broken Link Matcher (https://github.com/DanielKremer91/broken-link-matcher), dessen Muster und Provider-Schicht übernommen werden.
 
 ## 1. Ziel
 
@@ -220,4 +220,4 @@ Pflichtfälle:
 
 ## 14. Repo
 
-`/Users/Daniel/Downloads/ai-answer-matcher`, lokales git, Branch `main`. Kein Push ohne ausdrückliche Freigabe. Struktur: `aam/`, `app.py`, `tests/`, `docs/`, `examples/` (anonymisierte Beispieldaten), `requirements.txt`, `requirements-dev.txt`, `README.md` (deutsch, mit Einrichtung über `uv` und über `pip`).
+Struktur: `aam/`, `app.py`, `tests/`, `docs/`, `examples/` (anonymisierte Beispieldaten), `requirements.txt`, `requirements-dev.txt`, `README.md` (deutsch, mit Einrichtung über `uv` und über `pip`).

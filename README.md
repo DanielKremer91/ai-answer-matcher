@@ -147,3 +147,7 @@ Die Tests laufen ohne Netz und ohne API-Key.
 ## Geplant
 
 Abruf von AI Overview und AI Mode über SerpApi und eine Validierungsstudie über mehrere Keywords (zitierte gegen nicht zitierte Seiten).
+
+## Lizenz
+
+MIT, siehe [LICENSE](LICENSE).
