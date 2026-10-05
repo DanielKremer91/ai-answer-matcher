@@ -13,9 +13,9 @@ from tests.fakes import sample_result
 KEYWORD = "dachsanierung kosten"
 
 
-def test_excel_has_five_sheets_and_each_starts_with_the_keyword():
+def test_excel_has_six_sheets_and_each_starts_with_the_keyword():
     sheets = pd.read_excel(io.BytesIO(to_excel(sample_result())), sheet_name=None)
-    assert tuple(sheets) == SHEETS == ("Seiten", "Themen", "Aussagen", "Chunks", "Protokoll")
+    assert tuple(sheets) == SHEETS == ("Seiten", "Themen", "Aussagen", "Aussage x Seite", "Chunks", "Protokoll")
     for name, df in sheets.items():
         assert df.columns[0] == KEYWORD_COLUMN == "Keyword/Prompt", name
         assert set(df[KEYWORD_COLUMN]) == {KEYWORD}, name
@@ -255,3 +255,37 @@ def test_summary_hints_at_the_minimum_when_no_status_can_be_given():
     assert summary(result).endswith(" Für einen Status sind mindestens 4 Aussagen oder Quell-URLs nötig.")
     assert "mindestens 4 Aussagen" not in summary(sample_result(with_sources=False))  # 5 statements
     assert "mindestens 4 Aussagen" not in summary(sample_result())
+
+
+def test_statement_pages_frame_lists_each_statement_against_each_page():
+    from aam.report import statement_pages_frame
+
+    df = statement_pages_frame(sample_result())
+    assert list(df.columns) == ["Keyword/Prompt", "Thema", "Aussage (AI-Chunk)", "Rang", "URL", "Herkunft",
+                                "Bester Chunk Score", "Seiten-Relevanz", "Bester Chunk"]
+    assert len(df) == 5 * 3  # five statements, two own pages and one source
+    rows = df[df["Aussage (AI-Chunk)"] == "Die KfW fördert die Dachdämmung mit zinsgünstigen Krediten."]
+    assert list(rows["Rang"]) == [1, 2, 3]
+    top = rows.iloc[0]
+    assert (top["URL"], top["Herkunft"], top["Thema"]) == ("https://quelle.de/foerderung", "Quelle", "Förderung")
+    assert top["Bester Chunk"] == "Die KfW fördert die Dachdämmung mit zinsgünstigen Krediten."
+    assert all(round(v, 4) == v for v in df["Seiten-Relevanz"])
+
+
+def test_statement_pages_matrix_has_one_row_per_statement_and_one_column_per_page():
+    from aam.report import statement_pages_matrix
+
+    matrix = statement_pages_matrix(sample_result())
+    ranked = [p.url + (" (Quelle)" if p.origin == SOURCE else "") for p in sample_result().match.pages]
+    assert list(matrix.columns) == ["Thema", "Aussage"] + ranked  # pages in the order of the page ranking
+    assert set(ranked) == {"https://me.de/kosten", "https://me.de/blog", "https://quelle.de/foerderung (Quelle)"}
+    assert len(matrix) == 5
+    row = matrix[matrix["Aussage"] == "Die KfW fördert die Dachdämmung mit zinsgünstigen Krediten."].iloc[0]
+    assert row["https://quelle.de/foerderung (Quelle)"] == 1.0
+    assert row["https://me.de/kosten"] < 0.85
+
+
+def test_statement_pages_matrix_is_skipped_for_many_pages():
+    from aam.report import statement_pages_matrix
+
+    assert statement_pages_matrix(sample_result(), max_pages=2) is None

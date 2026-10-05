@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
@@ -115,12 +115,26 @@ class PageRow:
 
 
 @dataclass(frozen=True)
+class StatementPage:
+    """One statement against one page: the page's best chunk and the page as a whole."""
+
+    statement: Statement
+    topic_label: str
+    rank: int  # rank of the page for this statement, by best chunk score
+    url: str
+    origin: str
+    best_chunk: Hit  # best chunk of this page for the statement
+    page_score: float  # cosine of the statement with the page vector (topical fit of the whole page)
+
+
+@dataclass(frozen=True)
 class MatchResult:
     pages: list
     topics: list
     statements: list
     has_sources: bool
     status_labels: tuple[str, ...]
+    statement_pages: list = field(default_factory=list)  # StatementPage rows, grouped by statement
 
 
 @dataclass(frozen=True)

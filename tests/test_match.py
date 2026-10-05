@@ -122,3 +122,37 @@ def test_chunks_without_vector_are_ignored_and_missing_own_content_raises():
 def test_vectors_are_normalised_before_comparison():
     result = match(answer([1]), [vec(5, 0)], [chunk("/a", OWN, 0, (3, 0))])
     assert result.statements[0].own.score == approx(1.0)
+
+
+def test_statement_pages_list_every_page_with_best_chunk_and_page_relevance():
+    result = match(answer([1, 1]), S2, CHUNKS)
+    first = [r for r in result.statement_pages if r.statement.id == 0]
+    assert [(r.rank, r.url, r.origin) for r in first] == [(1, "/a", OWN), (2, "/b", OWN), (3, "q", SOURCE)]
+    assert first[0].best_chunk.text == "/a#0" and first[0].best_chunk.score == approx(1.0)
+    assert first[0].page_score == approx(1.0) and first[0].topic_label == "T0"
+    assert first[1].best_chunk.score == approx(0.6) and first[1].page_score == approx(0.6)
+    second = [r for r in result.statement_pages if r.statement.id == 1]
+    assert [(r.rank, r.url) for r in second] == [(1, "q"), (2, "/b"), (3, "/a")]
+
+
+def test_statement_page_relevance_uses_the_page_vector_not_the_best_chunk():
+    chunks = [chunk("/a", OWN, 0, (1, 0), words=10), chunk("/a", OWN, 1, (0, 1), words=30)]
+    row = match(answer([1]), [vec(1, 0)], chunks).statement_pages[0]
+    assert row.best_chunk.score == approx(1.0)          # one passage fits exactly
+    assert row.page_score == approx(0.3162, abs=1e-3)   # the page as a whole is about something else
+
+
+def test_statement_pages_keep_the_ten_best_own_pages_and_every_source():
+    own = [chunk(f"/p{i}", OWN, 0, (1.0, i / 10)) for i in range(12)]
+    sources = [chunk("q1", SOURCE, 0, (0, 1)), chunk("q2", SOURCE, 0, (-1, 0))]
+    rows = match(answer([1]), [vec(1, 0)], own + sources).statement_pages
+    own_urls = [r.url for r in rows if r.origin == OWN]
+    assert len(own_urls) == 10 and "/p11" not in own_urls and "/p10" not in own_urls
+    assert {r.url for r in rows if r.origin == SOURCE} == {"q1", "q2"}
+    assert [r.rank for r in rows] == list(range(1, 13))
+    assert [r.best_chunk.score for r in rows] == sorted((r.best_chunk.score for r in rows), reverse=True)
+
+
+def test_statement_pages_without_sources_contain_own_pages_only():
+    rows = match(answer([1]), [vec(1, 0)], [chunk("/a", OWN, 0, (1, 0))]).statement_pages
+    assert [(r.url, r.origin, r.rank) for r in rows] == [("/a", OWN, 1)]

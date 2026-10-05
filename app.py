@@ -170,7 +170,8 @@ def show_result(result, shown_warnings=()) -> None:
     for warning in result.meta.warnings:
         if warning not in shown_warnings:  # warnings from the chunking step are already on screen
             st.warning(warning)
-    tab_pages, tab_topics, tab_statements = st.tabs(["Seiten", "Themen", "Aussagen"])
+    tab_pages, tab_topics, tab_statements, tab_matrix = st.tabs(
+        ["Seiten", "Themen", "Aussagen", "Aussage × Seite"])
     with tab_pages:
         st.caption("Ganze AI-Antwort gegen ganze Seite. Eigene Seiten und Quellen in einem Ranking.")
         st.dataframe(report.pages_frame(result), width="stretch", hide_index=True)
@@ -180,6 +181,18 @@ def show_result(result, shown_warnings=()) -> None:
     with tab_statements:
         st.caption("Bester Chunk der eigenen Domain pro einzelner Aussage (AI-Chunk).")
         st.dataframe(report.statements_frame(result), width="stretch", hide_index=True)
+    with tab_matrix:
+        st.caption(
+            "Jede Aussage gegen jede Seite. „Bester Chunk Score“: Gibt es auf der Seite eine passende Passage? "
+            "„Seiten-Relevanz“: Passt die Seite als Ganzes zum Thema der Aussage? Pro Aussage die zehn besten "
+            "eigenen Seiten und alle Quellen.")
+        matrix = report.statement_pages_matrix(result)
+        if matrix is not None:
+            st.markdown("**Matrix:** bester Chunk Score pro Aussage und Seite")
+            st.dataframe(matrix, width="stretch", hide_index=True)
+        else:
+            st.caption("Für eine Matrix sind es zu viele Seiten. Die Liste unten und das Excel enthalten alle Werte.")
+        st.dataframe(report.statement_pages_frame(result), width="stretch", hide_index=True)
 
     slug = re.sub(r"[^a-z0-9]+", "-", result.meta.keyword.lower()).strip("-")[:40] or "lauf"
     signature = state["result_sig"]

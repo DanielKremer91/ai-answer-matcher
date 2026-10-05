@@ -122,6 +122,10 @@ Pro Aussage: bester eigener Chunk (URL, Text, Score) über die gesamte Domain; b
 
 Pro Thema: Themenvektor = längengewichteter Mittelwert seiner Aussagen-Vektoren. Bester eigener Chunk und bester Quell-Chunk gegen den Themenvektor, Delta, dazu die Anzahl Aussagen und wie viele davon abgedeckt, schwach oder Lücke sind.
 
+### 7.2a Aussage gegen Seite
+
+Pro Aussage und Seite (eigen und Quelle): bester Chunk dieser Seite zur Aussage (Text, Score) und Seiten-Relevanz = Kosinus(Aussage, Seitenvektor). Der beste Chunk beantwortet, ob die Seite eine passende Passage hat. Die Seiten-Relevanz beantwortet, ob die Seite als Ganzes zum Thema der Aussage passt; sie ist ein relatives Signal, weil der gemittelte Seitenvektor bei Seiten mit vielen Themen verdünnt. Pro Aussage werden die zehn besten eigenen Seiten nach Chunk-Score und alle Quellen ausgegeben, mit Rang. Der Vergleich bleibt symmetrisch: Das Modell bettet nie eine ganze Seite als einen Text ein.
+
 ### 7.3 Status mit Quellen
 
 | Status | Bedingung |
@@ -161,7 +165,7 @@ Hauptbereich in vier Schritten, jeder wird aktiv, wenn der vorige vollständig i
    - drei Beispiel-Chunks des eigenen Contents;
    - die Anzahl Texte, die im nächsten Schritt eingebettet werden.
    Die Zielgröße kann hier geändert und neu gechunkt werden, ohne Embedding-Kosten. Einzige Ausnahme: Greift der semantische Fallback der Segmentierung, werden in diesem Schritt die Sätze der AI-Antwort eingebettet (wenige Dutzend Texte, danach im Cache).
-4. **Analysieren:** Embedding mit Fortschrittsbalken, Matching, dann Zusammenfassung, drei Tabellen und zwei Downloads (Excel, Chunk-Embedding-Export). Der Chunk-Embedding-Export entfällt, wenn der eigene Content selbst aus einem solchen Export kam. Geänderte Schwellen werden ohne neues Embedding auf das vorhandene Ergebnis angewendet.
+4. **Analysieren:** Embedding mit Fortschrittsbalken, Matching, dann Zusammenfassung, vier Tabellen (Seiten, Themen, Aussagen, Aussage × Seite, letztere bei bis zu 15 Seiten zusätzlich als Matrix) und zwei Downloads (Excel, Chunk-Embedding-Export). Der Chunk-Embedding-Export entfällt, wenn der eigene Content selbst aus einem solchen Export kam. Geänderte Schwellen werden ohne neues Embedding auf das vorhandene Ergebnis angewendet.
 
 Zusammenfassung in zwei Sätzen: relevanteste eigene Seite mit Seitenscore und Rang, Anzahl abgedeckter Aussagen, Themen mit Lücken.
 
@@ -176,6 +180,7 @@ Jedes Blatt hat `Keyword/Prompt` als erste Spalte.
 | Seiten | Rang, URL, Herkunft, Seitenscore, Bester Chunk Score, Aussagen abgedeckt, Aussagen gesamt |
 | Themen | Thema, Anzahl Aussagen, Beste eigene URL, Bester eigener Chunk, Score, Beste Quell-URL, Bester Quell-Chunk, Score Quelle, Delta, abgedeckt / schwach / Lücke |
 | Aussagen | Thema, Aussage (AI-Chunk), Wortzahl, Beste eigene URL, Bester eigener Chunk, Score, Beste Quell-URL, Bester Quell-Chunk, Score Quelle, Delta, Status |
+| Aussage x Seite | Thema, Aussage (AI-Chunk), Rang, URL, Herkunft, Bester Chunk Score, Seiten-Relevanz, Bester Chunk |
 | Chunks | Herkunft, URL, Chunk-Index, Text, Wortzahl (AI-Aussagen, eigene Chunks und Quell-Chunks; ohne Vektoren) |
 | Protokoll | Datum, Provider, Modell, Dimension, Zielgröße, Segmentierungsmethode, Schwellen, Chunk-Statistiken, nicht geladene URLs mit Grund |
 

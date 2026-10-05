@@ -357,3 +357,12 @@ def test_chunk_export_is_built_only_on_demand(monkeypatch):
     assert not at.exception and not at.error
     assert len(at.get("download_button")) == 2
     assert built == [] and not has_state(at, "chunks_csv")
+
+
+def test_result_has_a_statement_by_page_tab_with_matrix_and_list():
+    at = analyzed(source_file=True)
+    assert not at.exception and not at.error
+    assert any(t.label == "Aussage × Seite" for t in at.tabs)
+    frames = [d.value for d in at.dataframe]
+    assert any("Seiten-Relevanz" in f.columns and "Bester Chunk Score" in f.columns for f in frames)
+    assert any(list(f.columns[:2]) == ["Thema", "Aussage"] and "https://me.de/kosten" in f.columns for f in frames)

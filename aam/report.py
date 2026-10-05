@@ -12,7 +12,8 @@ from aam.match import MIN_STATEMENTS_FOR_QUARTILES, STATUS_COVERED, STATUS_GAP
 from aam.models import OWN, SOURCE, ChunkStats, FailedUrl, Result, SegmentedAnswer
 
 KEYWORD_COLUMN = "Keyword/Prompt"
-SHEETS = ("Seiten", "Themen", "Aussagen", "Chunks", "Protokoll")
+SHEETS = ("Seiten", "Themen", "Aussagen", "Aussage x Seite", "Chunks", "Protokoll")
+MATRIX_MAX_PAGES = 15  # more pages than this do not fit a readable matrix
 ORIGIN_LABELS = {OWN: "eigen", SOURCE: "Quelle"}
 METHOD_LABELS = {"structure": "Struktur", "semantic": "semantisch"}
 _SOURCE_COLUMNS = ["Beste Quell-URL", "Bester Quell-Chunk", "Score Quelle", "Delta"]
@@ -102,6 +103,33 @@ def statements_frame(result: Result) -> pd.DataFrame:
     columns = (["Thema", "Aussage (AI-Chunk)", "Wortzahl", "Beste eigene URL", "Bester eigener Chunk", "Score"]
                + (_SOURCE_COLUMNS if has_sources else []) + ["Status"])
     return _frame(rows, columns, result.meta.keyword)
+
+
+def statement_pages_frame(result: Result) -> pd.DataFrame:
+    """Every statement against the pages kept for it: best chunk of the page and fit of the whole page."""
+    rows = [(r.topic_label, r.statement.text, r.rank, r.url, ORIGIN_LABELS[r.origin],
+             _score(r.best_chunk.score), _score(r.page_score), r.best_chunk.text)
+            for r in result.match.statement_pages]
+    columns = ["Thema", "Aussage (AI-Chunk)", "Rang", "URL", "Herkunft", "Bester Chunk Score",
+               "Seiten-Relevanz", "Bester Chunk"]
+    return _frame(rows, columns, result.meta.keyword)
+
+
+def statement_pages_matrix(result: Result, max_pages: int = MATRIX_MAX_PAGES) -> Optional[pd.DataFrame]:
+    """Statements as rows, pages as columns, best chunk score as value; None when there are too many pages.
+
+    Pages are ordered as in the page ranking. A page that is not among a statement's kept pages stays empty.
+    """
+    kept = {(r.url, r.origin) for r in result.match.statement_pages}
+    pages = [(p.url, p.origin) for p in result.match.pages if (p.url, p.origin) in kept]
+    if not pages or len(pages) > max_pages:
+        return None
+    header = {page: page[0] + (" (Quelle)" if page[1] == SOURCE else "") for page in pages}
+    cells: dict[int, dict] = {}
+    for r in result.match.statement_pages:
+        row = cells.setdefault(r.statement.id, {"Thema": r.topic_label, "Aussage": r.statement.text})
+        row[header[(r.url, r.origin)]] = _score(r.best_chunk.score)
+    return pd.DataFrame(list(cells.values()), columns=["Thema", "Aussage"] + [header[page] for page in pages])
 
 
 def chunks_frame(result: Result) -> pd.DataFrame:
@@ -208,8 +236,8 @@ def summary(result: Result) -> str:
 
 
 def to_excel(result: Result) -> bytes:
-    frames = (pages_frame(result), topics_frame(result), statements_frame(result), chunks_frame(result),
-              protocol_frame(result))
+    frames = (pages_frame(result), topics_frame(result), statements_frame(result),
+              statement_pages_frame(result), chunks_frame(result), protocol_frame(result))
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         for name, frame in zip(SHEETS, frames):

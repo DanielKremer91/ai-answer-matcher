@@ -8,7 +8,7 @@ from typing import Optional, Sequence
 import numpy as np
 
 from aam.models import (OWN, SOURCE, Chunk, Hit, MatchResult, PageRow, SegmentedAnswer,
-                        StatementMatch, TopicMatch)
+                        StatementMatch, StatementPage, TopicMatch)
 
 STATUS_COVERED = "abgedeckt"
 STATUS_WEAK = "schwach"
@@ -16,6 +16,7 @@ STATUS_GAP = "Lücke"
 DELTA_LABELS = (STATUS_COVERED, STATUS_WEAK, STATUS_GAP)
 QUARTILE_LABELS = ("stark", "über Durchschnitt", "unter Durchschnitt", "schwach")
 MIN_STATEMENTS_FOR_QUARTILES = 4
+TOP_OWN_PAGES_PER_STATEMENT = 10  # rows per statement in the statement-by-page view; sources are all kept
 _EPS = 1e-6  # float32 cosines must not flip a status at the threshold
 
 
@@ -125,6 +126,8 @@ def match(answer: SegmentedAnswer, statement_vectors: Sequence[np.ndarray], chun
         counts = dict(Counter(statuses[i] for i in rows if statuses[i]))
         topic_matches.append(TopicMatch(topic, own_hit, source_hit, delta, counts))
 
+    per_statement_pages: list[list[tuple]] = [[] for _ in statements]  # filled by page_rows
+
     def page_rows(group: Sequence[Chunk], matrix: np.ndarray, sim: np.ndarray, origin: str) -> list[tuple]:
         by_url: dict[str, list[int]] = {}
         for i, chunk in enumerate(group):
@@ -140,6 +143,11 @@ def match(answer: SegmentedAnswer, statement_vectors: Sequence[np.ndarray], chun
                 mine = set(indices)
                 covered = sum(int(own_arg[i]) in mine for i in range(len(statements)))
             rows.append((url, origin, float(page_vector @ answer_vector), float(per_statement.max()), int(covered)))
+            best_in_page = sim[:, indices].argmax(axis=1)
+            page_fit = s_matrix @ page_vector
+            for i in range(len(statements)):
+                hit = _hit(group, indices[int(best_in_page[i])], per_statement[i])
+                per_statement_pages[i].append((url, origin, hit, float(page_fit[i])))
         return rows
 
     rows = page_rows(own, own_matrix, sim_own, OWN)
@@ -149,5 +157,19 @@ def match(answer: SegmentedAnswer, statement_vectors: Sequence[np.ndarray], chun
     pages = [PageRow(rank, url, origin, score, best, covered, len(statements))
              for rank, (url, origin, score, best, covered) in enumerate(rows, start=1)]
 
+    statement_pages = []
+    for i, statement in enumerate(statements):
+        by_score = sorted(per_statement_pages[i], key=lambda row: -row[2].score)
+        own_kept = 0
+        rank = 0
+        for url, origin, hit, page_fit in by_score:
+            if origin == OWN:
+                if own_kept == TOP_OWN_PAGES_PER_STATEMENT:
+                    continue
+                own_kept += 1
+            rank += 1
+            statement_pages.append(StatementPage(statement, labels[statement.topic_id], rank, url, origin,
+                                                 hit, page_fit))
+
     return MatchResult(pages, topic_matches, statement_matches, has_sources,
-                       DELTA_LABELS if has_sources else QUARTILE_LABELS)
+                       DELTA_LABELS if has_sources else QUARTILE_LABELS, statement_pages)

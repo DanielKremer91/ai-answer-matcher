@@ -117,6 +117,14 @@ Mit OpenAI oder Gemini gehen die Texte der AI-Antwort, deines Contents und der Q
 | Seiten | Ranking aller Seiten (eigene und Quellen) nach Ähnlichkeit zur ganzen AI-Antwort |
 | Themen | Bester Chunk deiner Domain pro Themengebiet, im Vergleich zum besten Quell-Chunk |
 | Aussagen | Bester Chunk deiner Domain pro Aussage, mit Abstand zur besten Quelle und Status |
+| Aussage × Seite | Jede Aussage gegen jede Seite: bester Chunk der Seite und Relevanz der Seite als Ganzes |
+
+Im Tab „Aussage × Seite" stehen pro Aussage und Seite zwei Werte:
+
+- **Bester Chunk Score:** Gibt es auf dieser Seite eine Passage, die zur Aussage passt?
+- **Seiten-Relevanz:** Passt die Seite als Ganzes zum Thema der Aussage? Der Wert vergleicht die Aussage mit dem Durchschnitt aller Passagen der Seite. Er taugt zum Sortieren deiner Seiten, nicht als absolute Zahl: Seiten mit vielen Themen schneiden schlechter ab.
+
+Hoher Chunk Score bei niedriger Seiten-Relevanz heißt: Die passende Passage steht auf einer Seite, die insgesamt etwas anderes behandelt. Pro Aussage erscheinen die zehn besten eigenen Seiten und alle Quellen. Bei bis zu 15 Seiten zeigt das Tool zusätzlich eine Matrix.
 
 Status mit Quellen: **abgedeckt** (dein Chunk liegt höchstens 0,05 unter dem besten Quell-Chunk), **schwach** (bis 0,15 darunter), **Lücke** (mehr als 0,15 darunter). Beide Schwellen sind in der Seitenleiste einstellbar.
 
