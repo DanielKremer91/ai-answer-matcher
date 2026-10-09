@@ -32,6 +32,15 @@ def test_extract_text_marks_headings_and_strips_bold_markers():
     assert "Die Sanierung kostet" in text
 
 
+def test_extract_text_drops_markdown_table_separator_rows():
+    table = ("<html><body><article><h1>T</h1><p>Eine Dachsanierung kostet je nach Umfang zwischen 100 und 300 "
+             "Euro pro Quadratmeter, wie üblich.</p><table><tr><th>Material</th><th>Preis</th></tr>"
+             "<tr><td>Ziegel</td><td>100 Euro</td></tr></table></article></body></html>")
+    lines = extract_text(table).split("\n")
+    assert "| Material | Preis |" in lines and "| Ziegel | 100 Euro |" in lines
+    assert not any(set(line) <= set("|-: ") for line in lines)
+
+
 def test_extract_text_empty_page():
     assert extract_text("<html><body></body></html>") == ""
 

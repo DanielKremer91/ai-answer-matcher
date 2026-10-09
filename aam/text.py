@@ -18,6 +18,14 @@ _ORDINAL = re.compile(r"(?:^|\s)\d{1,2}\.$")  # "am 1. Januar"
 _SINGLE_LETTER = re.compile(r"(?:^|[\s(])[A-Za-zÄÖÜäöü]\.$")  # the "z." of "z. B."
 
 
+# A Markdown table separator row such as `|---|:---:|`, or a bare rule: no content.
+SEPARATOR_LINE = re.compile(r"^\|?[\s:|-]+\|?$")
+
+
+def is_separator_line(line: str) -> bool:
+    return bool(SEPARATOR_LINE.match(line.strip()))
+
+
 def count_words(text: str) -> int:
     return len(text.split())
 

@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 import aam.compare as compare
-from aam.compare import LENGTH_RATIO, Comparison, compare_texts, text_vector
+from aam.compare import LENGTH_RATIO, Comparison, compare_texts, line_windows, long_windows, text_vector
 from aam.embeddings import embed_cached
 from aam.text import count_words
 from tests.fakes import FakeProvider, bow_vector
@@ -94,7 +94,8 @@ def test_fallback_windows_of_text_vector_respect_paragraphs(monkeypatch):
 
     text_vector("\n".join(lines), recording, "fake")
     assert len(calls[0]) > 1
-    assert all(w in lines for w in calls[0])
+    # short lines are merged, but a window never cuts a line: it is a run of whole lines
+    assert all(any(" ".join(lines[i:j]) == w for i in range(30) for j in range(i + 1, 31)) for w in calls[0])
 
 
 def test_best_window_contains_the_repeated_sentence():
@@ -203,3 +204,38 @@ def test_whole_score_of_long_text_uses_window_mean_above_the_limit(monkeypatch):
     assert result.windowed
     assert all(long not in call for call in calls)
     assert result.score >= result.whole_score
+
+
+SEPARATOR_SECTION = "\n".join([
+    "Kosten im Überblick",
+    "Ziegel",
+    "Schiefer",
+    "|---|---|",
+    sentence("lang", 29),
+    sentence("zwei", 29),
+])
+
+
+def test_short_lines_are_merged_into_the_following_line_and_separators_dropped():
+    windows = line_windows(SEPARATOR_SECTION, 30)
+    assert len(windows) == 2
+    assert windows[0].startswith("Kosten im Überblick Ziegel Schiefer Lang0 ")
+    assert all(len(w.split()) >= 15 for w in windows)
+    assert not any("---" in w for w in windows)
+
+
+def test_no_window_below_half_the_target_and_none_of_separators():
+    for windows in (line_windows(SEPARATOR_SECTION, 30), line_windows(SEPARATOR_SECTION, 60),
+                    long_windows(SEPARATOR_SECTION, 30)):
+        assert all(len(w.split()) >= 15 for w in windows)
+        assert not any(set(w) <= set("|-: ") for w in windows)
+
+
+def test_a_trailing_short_line_joins_the_previous_line():
+    text = sentence("lang", 29) + "\nZum Schluss kurz"
+    assert line_windows(text, 30) == [sentence("lang", 29) + " Zum Schluss kurz"]
+
+
+def test_a_text_of_only_short_lines_stays_one_window_and_separator_rows_vanish():
+    assert line_windows("Eins\nZwei\n| --- | :---: |\n---", 30) == ["Eins Zwei"]
+    assert line_windows("|---|\n", 30) == []

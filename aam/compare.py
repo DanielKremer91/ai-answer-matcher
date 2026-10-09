@@ -11,6 +11,7 @@ from aam.chunk import _windows
 from aam.embeddings import fits_whole_text
 from aam.match import unit_rows, weighted_mean
 from aam.segment import MAX_TARGET, MIN_TARGET
+from aam.text import count_words, is_separator_line, normalize_space
 
 Embed = Callable[[list[str]], list[Optional[np.ndarray]]]
 
@@ -33,12 +34,38 @@ class Comparison:
     ratio: float = 1.0     # words of the longer text / words of the shorter text
 
 
+def _merged_lines(text: str, target_words: int) -> list[str]:
+    """Non-empty lines without table separator rows; lines under half the target join the following line.
+
+    Like the chunking of stage 1: a heading, a list item or a table cell never becomes a window of its
+    own. A short line at the end joins the previous one.
+    """
+    half = target_words / 2
+    merged: list[str] = []
+    carry = ""
+    for raw in text.split("\n"):
+        line = normalize_space(raw)
+        if not line or is_separator_line(line):
+            continue
+        line = f"{carry} {line}" if carry else line
+        if count_words(line) < half:
+            carry = line
+        else:
+            merged.append(line)
+            carry = ""
+    if carry:
+        if merged:
+            merged[-1] = f"{merged[-1]} {carry}"
+        else:
+            merged.append(carry)
+    return merged
+
+
 def line_windows(text: str, target_words: int) -> list[str]:
-    """Sentence windows per non-empty line, so a window never crosses a paragraph."""
+    """Sentence windows per line (short lines merged first), so a window never crosses a paragraph."""
     windows: list[str] = []
-    for line in text.split("\n"):
-        if line.strip():
-            windows.extend(_windows(line, target_words) or [line.strip()])
+    for line in _merged_lines(text, target_words):
+        windows.extend(_windows(line, target_words) or [line])
     return windows
 
 

@@ -9,6 +9,7 @@ import httpx
 import trafilatura
 
 from aam.models import Document, FailedUrl
+from aam.text import is_separator_line
 
 _TEXT_TYPES = ("html", "xml", "text/plain")
 _ESCAPABLE = "\\*_`~#[]().!|<>+-{}"
@@ -43,14 +44,14 @@ def extract_text(html) -> str:
     """Main content as Markdown, one paragraph per line; "" when nothing usable is found.
 
     Headings arrive as `## Title` lines. Inline Markdown (emphasis, code, escapes, list markers) is
-    removed, empty lines dropped.
+    removed, empty lines and table separator rows (`|---|---|`) dropped.
     """
     text = trafilatura.extract(html, include_comments=False, include_tables=True, favor_recall=True,
                                output_format="markdown")
     if not text:
         return ""
     lines = (_clean_inline(line) for line in text.split("\n"))
-    return "\n".join(line for line in lines if line)
+    return "\n".join(line for line in lines if line and not is_separator_line(line))
 
 
 def fetch_documents(urls: Sequence[str], origin: str, client: httpx.Client, *, timeout: float = 20.0,
