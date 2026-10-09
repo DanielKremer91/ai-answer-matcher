@@ -107,12 +107,14 @@ def match(answer: SegmentedAnswer, statement_vectors: Sequence[np.ndarray], chun
         own_hit = _hit(own, own_arg[i], own_best[i])
         source_hit: Optional[Hit] = None
         delta: Optional[float] = None
+        own_vs_source: Optional[float] = None
         if has_sources:
             j = int(sim_source[i].argmax())
             source_hit = _hit(sources, j, sim_source[i, j])
             delta = own_hit.score - source_hit.score
+            own_vs_source = float(own_matrix[int(own_arg[i])] @ source_matrix[j])
         statement_matches.append(StatementMatch(statement, labels[statement.topic_id], own_hit, source_hit,
-                                                delta, statuses[i]))
+                                                delta, statuses[i], own_vs_source))
 
     position = {statement.id: i for i, statement in enumerate(statements)}
     topic_matches = []

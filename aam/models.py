@@ -95,6 +95,7 @@ class StatementMatch:
     source: Optional[Hit]
     delta: Optional[float]  # own score minus source score; None without sources
     status: str  # "" when no status can be given
+    own_vs_source: Optional[float] = None  # cosine of the best own and the best source chunk; None without sources
 
 
 @dataclass(frozen=True)

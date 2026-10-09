@@ -44,6 +44,17 @@ def test_statement_hits_delta_and_status_with_sources():
     assert result.status_labels == ("abgedeckt", "schwach", "Lücke")
 
 
+def test_own_vs_source_is_the_cosine_of_the_two_best_chunks():
+    chunks = [chunk("/a", OWN, 0, (1, 0)), chunk("q", SOURCE, 0, (0.6, 0.8))]
+    result = match(answer([1]), [vec(1, 0)], chunks)
+    assert result.statements[0].own_vs_source == approx(0.6)
+
+
+def test_own_vs_source_is_none_without_sources():
+    result = match(answer([1, 1]), S2, [c for c in CHUNKS if c.origin == OWN])
+    assert all(m.own_vs_source is None for m in result.statements)
+
+
 def test_thresholds_are_configurable():
     assert match(answer([1, 1]), S2, CHUNKS, weak_delta=0.25).statements[1].status == "schwach"
     assert match(answer([1, 1]), S2, CHUNKS, covered_delta=0.25, weak_delta=0.3).statements[1].status == "abgedeckt"

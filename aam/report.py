@@ -98,10 +98,11 @@ def topics_frame(result: Result) -> pd.DataFrame:
 
 def statements_frame(result: Result) -> pd.DataFrame:
     has_sources = result.match.has_sources
-    rows = [[m.topic_label, m.statement.text, m.statement.words] + _hit_cells(m, has_sources) + [m.status]
+    rows = [[m.topic_label, m.statement.text, m.statement.words] + _hit_cells(m, has_sources)
+            + ([_score(m.own_vs_source)] if has_sources else []) + [m.status]
             for m in result.match.statements]
     columns = (["Thema", "Aussage (AI-Chunk)", "Wortzahl", "Beste eigene URL", "Bester eigener Chunk", "Score"]
-               + (_SOURCE_COLUMNS if has_sources else []) + ["Status"])
+               + (_SOURCE_COLUMNS + ["Nähe zum Quell-Chunk"] if has_sources else []) + ["Status"])
     return _frame(rows, columns, result.meta.keyword)
 
 

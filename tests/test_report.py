@@ -46,11 +46,13 @@ def test_statements_frame_with_sources():
     df = statements_frame(sample_result())
     assert list(df.columns) == ["Keyword/Prompt", "Thema", "Aussage (AI-Chunk)", "Wortzahl", "Beste eigene URL",
                                 "Bester eigener Chunk", "Score", "Beste Quell-URL", "Bester Quell-Chunk",
-                                "Score Quelle", "Delta", "Status"]
+                                "Score Quelle", "Delta", "Nähe zum Quell-Chunk", "Status"]
     assert len(df) == 5
     row = df[df["Aussage (AI-Chunk)"] == "Das BAFA zahlt Zuschüsse von bis zu 20 Prozent."].iloc[0]
     assert (row["Thema"], row["Wortzahl"], row["Status"]) == ("Förderung", 9, "Lücke")
     assert abs(row["Delta"] - (row["Score"] - row["Score Quelle"])) < 2e-4
+    closeness = df["Nähe zum Quell-Chunk"]
+    assert closeness.notna().all() and all(round(v, 4) == v for v in closeness)
 
 
 def test_frames_without_sources_drop_the_source_columns():
@@ -60,6 +62,7 @@ def test_frames_without_sources_drop_the_source_columns():
     assert set(pages["Herkunft"]) == {"eigen"}
     for df in (topics, statements):
         assert not {"Beste Quell-URL", "Bester Quell-Chunk", "Score Quelle", "Delta"} & set(df.columns)
+    assert "Nähe zum Quell-Chunk" not in statements.columns
     assert list(topics.columns[-4:]) == list(QUARTILE_LABELS)
     assert statements.columns[-1] == "Status"
 
