@@ -464,7 +464,8 @@ def test_manual_comparison_of_a_statement_and_a_long_text_shows_both_values_and_
     whole, best = (float(m.value.replace(",", ".")) for m in at.metric)
     assert best > whole
     assert any("Eine Neueindeckung kostet" in t.value for t in at.text)
-    ratio = round(len(LONG_TEXT.split()) / len(SHORT_STATEMENT.split()))
+    ratio = f"{len(LONG_TEXT.split()) / len(SHORT_STATEMENT.split()):.1f}".replace(".", ",")
+    assert "," in ratio
     assert [i.value for i in at.info] == [
         f"Dein Text ist {ratio}-mal so lang wie die Aussage. Der Ganztext-Wert wird durch die "
         "Länge gedrückt; das beste Fenster zeigt, ob die Aussage an einer Stelle vorkommt."]
@@ -478,7 +479,7 @@ def test_manual_hint_names_the_statement_as_longer_when_field_a_is_the_longer_te
     button(at, "Vergleichen").click()
     at.run()
     assert not at.exception and not at.error
-    ratio = round(len(LONG_TEXT.split()) / len(SHORT_STATEMENT.split()))
+    ratio = f"{len(LONG_TEXT.split()) / len(SHORT_STATEMENT.split()):.1f}".replace(".", ",")
     assert [i.value for i in at.info] == [
         f"Die Aussage ist {ratio}-mal so lang wie dein Text. Der Ganztext-Wert wird durch die "
         "Länge gedrückt; das beste Fenster zeigt, ob die Aussage an einer Stelle vorkommt."]
@@ -566,12 +567,55 @@ def test_gap_mode_compares_sections_and_offers_the_excel(backend):
     assert list(frame["Kosinus"]) == sorted(frame["Kosinus"], reverse=True)
     assert "https://quelle.de/foerderung" in at.code[0].value and "Abschnittsebene H2" in at.code[0].value
     summary = gap_report.gap_summary(at.session_state["gap_result"])
-    assert "haben bei dir einen Gegenpart" in summary and "Kandidat" in summary
-    assert [m.value for m in at.markdown if "haben bei dir einen Gegenpart" in m.value] == [summary]
+    assert "2 Abschnitte, Kosinus von" in summary and "Kandidaten für Lücken" in summary
+    assert [m.value for m in at.markdown if "Die untere Hälfte der Liste" in m.value] == [summary]
+    assert "Vergleich" in frame.columns
     assert any(e.label == "Texte nachlesen" for e in at.expander)
     assert [b.key for b in at.get("download_button")] == ["gap_download"]
     assert "gap_result" in at.session_state
     assert backend.fetched  # pages came through the patched fetcher
+
+
+def sentence(prefix: str, n: int) -> str:
+    words = [f"{prefix}{i}" for i in range(n)]
+    words[0] = words[0].capitalize()
+    return " ".join(words) + "."
+
+
+def test_gap_mode_texts_show_the_best_window_with_its_method(backend):
+    passage = " ".join(sentence(f"pass{k}x", 12) for k in range(3))
+    long_text = "\n".join([sentence(f"lang{i}x", 20) for i in range(10)] + [passage]
+                          + [sentence(f"mehr{i}x", 20) for i in range(10)])
+    backend.known["https://wett.de/a"] = Document(
+        "https://wett.de/a", f"## Thema\n{passage}\n## Anderes\n{sentence('woanders', 30)}", SOURCE)
+    backend.known["https://me.de/a"] = Document("https://me.de/a", f"## Lang\n{long_text}", OWN)
+    at = set_mode(AppTest.from_file(APP, default_timeout=30).run(), MODE_3)
+    at.text_area(key="gap_competitor_urls").input("https://wett.de/a")
+    at.text_area(key="gap_own_urls").input("https://me.de/a")
+    at.run()
+    button(at, "Abschnitte vergleichen").click()
+    at.run()
+    assert not at.exception and not at.error
+    frame = at.dataframe[0].value
+    assert "Fenster aus eigenem Abschnitt" in set(frame["Vergleich"])
+    expander = next(e for e in at.expander if e.label == "Texte nachlesen")
+    assert any(m.value == "Bestes Fenster (Fenster aus eigenem Abschnitt)" for m in expander.markdown)
+    assert any(t.value == passage for t in expander.text)
+
+
+def test_single_section_page_gets_the_short_note_unless_it_has_no_headings(backend):
+    backend.known["https://wett.de/a"] = Document("https://wett.de/a", "## Nur eine\nEin Absatz über Kosten.", SOURCE)
+    backend.known["https://wett.de/b"] = Document("https://wett.de/b", "Ein Absatz über Kosten.", SOURCE)
+    at = set_mode(AppTest.from_file(APP, default_timeout=30).run(), MODE_3)
+    at.text_area(key="gap_competitor_urls").input("https://wett.de/a\nhttps://wett.de/b")
+    at.text_area(key="gap_own_urls").input("https://me.de/kosten")
+    at.run()
+    button(at, "Abschnitte vergleichen").click()
+    at.run()
+    assert not at.exception and not at.error
+    notes = [i.value for i in at.info]
+    assert "https://wett.de/a: Die Seite hat nur einen Abschnitt." in notes
+    assert "https://wett.de/b: Die Seite hat nur einen Abschnitt. Verglichen wird die ganze Seite." in notes
 
 
 def test_gap_mode_with_an_answer_adds_the_next_statement(backend):

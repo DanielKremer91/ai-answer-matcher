@@ -465,8 +465,9 @@ def show_comparison(comparison) -> None:
         right.metric("Bestes Fenster", report._de(comparison.score))
         st.caption(f"Bestes Fenster ({comparison.window_words} Wörter)")
         st.text(comparison.best_window)
+        ratio = f"{comparison.ratio:.1f}".replace(".", ",")
         subject, other = ("Die Aussage", "dein Text") if comparison.swapped else ("Dein Text", "die Aussage")
-        st.info(f"{subject} ist {round(comparison.ratio)}-mal so lang wie {other}. Der Ganztext-Wert wird durch "
+        st.info(f"{subject} ist {ratio}-mal so lang wie {other}. Der Ganztext-Wert wird durch "
                 "die Länge gedrückt; das beste Fenster zeigt, ob die Aussage an einer Stelle vorkommt.")
     else:
         st.metric("Kosinus", report._de(comparison.score))
@@ -538,6 +539,9 @@ def render_gap_result(result) -> None:
             st.text(row.competitor.text)
             st.markdown(f"Eigener Abschnitt ({row.own.url}): **{row.own.title}**")
             st.text(row.own.text)
+            if row.best_window:
+                st.markdown(f"Bestes Fenster ({row.method})")
+                st.text(row.best_window)
     slug = re.sub(r"[^a-z0-9]+", "-", result.keyword.lower()).strip("-")[:40] or "lauf"
     excel = cached_bytes("gap_excel", state["gap_sig"], lambda: gap_report.gap_to_excel(result))
     st.download_button("Excel herunterladen", data=excel, mime=XLSX_MIME, key="gap_download",
@@ -555,7 +559,8 @@ def render_gap() -> None:
             "Die Liste ist **absteigend nach Kosinus sortiert**. Die Zeilen am Ende sind die **Kandidaten für "
             "Lücken**: Themen, die der Wettbewerber behandelt und zu denen du keinen ähnlichen Abschnitt hast. "
             "Das Tool schreibt kein „fehlt“ in die Tabelle, die Wertung liegt bei dir. Ist ein Abschnitt viel "
-            "länger als der andere, zählt das beste Fenster darin.\n\n"
+            "länger als der andere, zählt der bessere von Ganztext- und Fensterwert; die Spalte „Vergleich“ "
+            "nennt, woher der Wert stammt.\n\n"
             "Wettbewerber und eigener Content kommen aus URLs, die das Tool lädt, oder aus einem "
             "Screaming-Frog-Export mit Überschriften im Main Content (siehe README). Optional kannst du eine "
             "AI-Antwort einfügen: Dann steht in jeder Zeile zusätzlich die nächste Aussage der Antwort.")

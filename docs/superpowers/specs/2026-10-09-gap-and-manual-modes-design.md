@@ -73,7 +73,19 @@ Ausgabe pro Wettbewerber-Seite:
 - **Tabelle,** absteigend nach Kosinus: Abschnitt des Wettbewerbers (Titel, Wörter), bester eigener Abschnitt (URL, Titel, Wörter), Kosinus, bestes Fenster (falls gefenstert), optional nächste AI-Aussage mit Kosinus. Dazu die Texte beider Abschnitte zum Nachlesen.
 - **Excel:** ein Blatt „Abschnitte" (die Tabelle mit Keyword/Prompt als erste Spalte, leer ohne AI-Antwort) und ein Blatt „Protokoll".
 
-Die untersten Zeilen der Tabelle sind die Lücken. Das Tool schreibt kein „fehlt" in die Tabelle; die Oberfläche erklärt die Lesart. Der Lesehinweis (`gap_summary`, für die erste Wettbewerber-Seite) lautet: „{url}: {k} von {n} Abschnitten haben bei dir einen Gegenpart mit Kosinus ab {Median}. Die {m} Abschnitte am Ende der Liste sind die Kandidaten für Lücken." (bei m = 1: „Der Abschnitt am Ende der Liste ist der Kandidat für eine Lücke."; bei m = 0: „{url}: alle {n} Abschnitte haben bei dir einen Gegenpart mit Kosinus ab {Median}."; bei einem einzigen Abschnitt: dessen Hinweis oder „{url}: ein Abschnitt, Kosinus {x} gegen {eigene URL}."). Dabei zählt k alle Zeilen mit Kosinus ab dem Median (Gleichstände mitgezählt), m = n − k.
+Die untersten Zeilen der Tabelle sind die Lücken. Das Tool schreibt kein „fehlt" in die Tabelle; die Oberfläche erklärt die Lesart. Der Lesehinweis (`gap_summary`, für die erste Wettbewerber-Seite) nennt die Spanne und die Leserichtung: „{url}: {n} Abschnitte, Kosinus von {min} bis {max}. Die untere Hälfte der Liste (Kosinus unter {Median}) zuerst prüfen, dort stehen die Kandidaten für Lücken." (Kommadezimalen, zwei Stellen; bei einem einzigen Abschnitt: dessen Hinweis oder „{url}: ein Abschnitt, Kosinus {x} gegen {eigene URL}."; ohne Zeilen leer).
+
+**Fenster-Kandidaten.** Bis `WINDOW_ALL_UP_TO = 40` eigenen Abschnitten bekommt jedes Paar über dem Längenverhältnis Fenster. Darüber besteht die Kandidatenmenge pro Wettbewerber-Abschnitt aus den fünf besten eigenen Abschnitten nach Ganztext-Kosinus und den fünf besten unter den Paaren mit Längenverhältnis über 4 (sonst fällt ein langer eigener Abschnitt, der die Passage enthält, durch die Vorauswahl).
+
+**Wert eines gefensterten Paars.** `Kosinus = max(Ganztext-Wert, bester Fensterwert)`. `GapRow.method` und die Spalte „Vergleich" (nach „Kosinus") nennen die Herkunft: „Ganztext", „Fenster aus Wettbewerber-Abschnitt" (Fenster aus dem längeren Wettbewerber-Text) oder „Fenster aus eigenem Abschnitt". „Bestes Fenster" ist nur gefüllt, wenn das Fenster gewonnen hat.
+
+**Eingebetteter Text.** Eingebettet und gefenstert wird `Titel\nText` (`Section.embed_text`, auch für die Einleitung mit ihrem Titel); angezeigt wird der Text ohne Titel. So findet ein FAQ-Abschnitt, dessen Überschrift die Frage ist, seinen Gegenpart.
+
+**Fenster.** Vor dem Fenstern werden Zeilen unter der halben Zielgröße mit der folgenden Zeile verbunden (die letzte mit der vorigen), Trennzeilen von Markdown-Tabellen (`|---|---|`) entfallen; `extract_text` entfernt sie schon beim Lesen.
+
+**Zu große Blöcke (Abschnitte, Abschnitt 3).** Ein Block, der tiefere Überschriften enthält und länger als das Doppelte des mittleren (unteren Median) Blocks ist, wird zusätzlich an der kleinsten tieferen Überschriftenebene geteilt; die neuen Abschnitte tragen diese Ebene. Ein Newsletter-Kasten als einzige H2 schluckt so nicht mehr die H3-Abschnitte des Artikels.
+
+Der Hinweis „Die Seite hat nur einen Abschnitt." erscheint, sobald eine Seite nach dem Schneiden genau einen Abschnitt hat; „Verglichen wird die ganze Seite." folgt nur, wenn sie keine Abschnittsebene hat.
 
 ## 7. Stufe-1-Ergänzung: Nähe zum Quell-Chunk
 
