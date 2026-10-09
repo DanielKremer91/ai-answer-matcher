@@ -11,9 +11,13 @@ import numpy as np
 from aam.compare import LENGTH_RATIO, Embed, long_windows, text_vectors
 from aam.match import unit_rows
 from aam.models import Document, SegmentedAnswer, Statement
+from aam.segment import MAX_TARGET, MIN_TARGET
 from aam.sections import Section, plain_text, section_level, split_sections
 
 SINGLE_SECTION_NOTE = "Die Seite hat nur einen Abschnitt, verglichen wird die ganze Seite."
+NO_PAGE_VECTOR_NOTE = "Kein Seitenvektor, Ganztext-Wert nicht verfügbar."
+# Per competitor section, only the best own sections by whole-vector cosine get windows.
+WINDOW_CANDIDATES = 5
 
 
 @dataclass(frozen=True)
@@ -38,6 +42,7 @@ class GapPage:
     best_own_url: str
     rows: list[GapRow]          # sorted by descending score
     note: str
+    dropped: int = 0            # competitor sections without a vector (missing from `rows`)
 
 
 @dataclass(frozen=True)
@@ -78,7 +83,8 @@ def analyze_gap(competitors: Sequence[Document], own: Sequence[Document], embed:
     """Compare every section of every competitor page with all own sections and keep the best match.
 
     Costs at most two `embed` calls: one for all section, page and statement vectors, and one for the
-    windows of the longer section of every pair whose length ratio exceeds `LENGTH_RATIO`.
+    windows of the longer section of the pairs above `LENGTH_RATIO` among the `WINDOW_CANDIDATES` best own
+    sections (by whole-vector cosine) of every competitor section.
     """
     comp_sides, own_sides = _prepare(competitors), _prepare(own)
     if not comp_sides:
@@ -99,56 +105,72 @@ def analyze_gap(competitors: Sequence[Document], own: Sequence[Document], embed:
     if not own_sections:
         raise ValueError("Für den eigenen Content konnte kein Embedding berechnet werden.")
 
-    # Pairs whose longer section needs windows; all windows are embedded together.
-    pairs = [(c, o) for side in comp_sides for c in side.sections if section_vec(c) is not None
-             for _, o in own_sections]
+    own_matrix = np.vstack([section_vec(o) for _, o in own_sections])
 
     def orientation(a: Section, b: Section) -> tuple[Section, Section]:
         return (a, b) if a.words <= b.words else (b, a)  # (short, long)
 
+    # Per competitor section: whole-vector cosine against every own section; only the best
+    # `WINDOW_CANDIDATES` own sections of that ranking get windows (when their length ratio asks for it).
     window_texts: dict[tuple[str, int], list[str]] = {}
-    for c, o in pairs:
-        short, long = orientation(c, o)
-        if long.words > LENGTH_RATIO * short.words and (long.text, short.words) not in window_texts:
-            windows = long_windows(long.text, short.words)
-            window_texts[(long.text, short.words)] = windows if len(windows) > 1 else []
+    plans: dict[int, tuple[np.ndarray, dict[int, tuple[str, int]]]] = {}
+    for side in comp_sides:
+        for c in side.sections:
+            cv = section_vec(c)
+            if cv is None:
+                continue
+            whole = own_matrix @ cv
+            windowed: dict[int, tuple[str, int]] = {}
+            for index in np.argsort(-whole, kind="stable")[:WINDOW_CANDIDATES]:
+                short, long = orientation(c, own_sections[int(index)][1])
+                if long.words <= LENGTH_RATIO * short.words:
+                    continue
+                key = (long.text, max(MIN_TARGET, min(MAX_TARGET, short.words)))
+                if key not in window_texts:
+                    windows = long_windows(long.text, key[1])
+                    window_texts[key] = windows if len(windows) > 1 else []
+                windowed[int(index)] = key
+            plans[id(c)] = (whole, windowed)
     to_embed = list(dict.fromkeys(w for ws in window_texts.values() for w in ws))
     window_vectors: dict[str, np.ndarray] = {}
     if to_embed:
         window_vectors = {w: _unit(v) for w, v in zip(to_embed, embed(to_embed)) if v is not None}
 
-    def score_pair(c: Section, o: Section) -> tuple[float, bool, str]:
-        short, long = orientation(c, o)
-        short_vec = section_vec(short)
-        windows = [w for w in window_texts.get((long.text, short.words), []) if w in window_vectors]
-        if windows:
-            best = max(windows, key=lambda w: float(short_vec @ window_vectors[w]))
-            return float(short_vec @ window_vectors[best]), True, best
-        return float(short_vec @ section_vec(long)), False, ""
+    def best_own(c: Section) -> tuple[float, Section, bool, str]:
+        whole, windowed = plans[id(c)]
+        best = None
+        for index, (_, o) in enumerate(own_sections):
+            score, is_windowed, window = float(whole[index]), False, ""
+            key = windowed.get(index)
+            if key is not None:
+                short, _long = orientation(c, o)
+                usable = [w for w in window_texts[key] if w in window_vectors]
+                if usable:
+                    short_vec = section_vec(short)
+                    window = max(usable, key=lambda w: float(short_vec @ window_vectors[w]))
+                    score, is_windowed = float(short_vec @ window_vectors[window]), True
+            if best is None or score > best[0]:
+                best = (score, o, is_windowed, window)
+        return best
 
     statement_vectors = [(st, vectors[st.text]) for st in statements if st.text in vectors]
 
     pages: list[GapPage] = []
     for side in comp_sides:
-        found: list[tuple[float, Section, Section, bool, str]] = []
+        found = []
         for c in side.sections:
-            if section_vec(c) is None:
-                continue
-            best = None
-            for _, o in own_sections:
-                score, windowed, window = score_pair(c, o)
-                if best is None or score > best[0]:
-                    best = (score, c, o, windowed, window)
-            found.append(best)
-        found.sort(key=lambda item: item[0], reverse=True)
+            if section_vec(c) is not None:
+                found.append((c, *best_own(c)))
+        found.sort(key=lambda item: item[1], reverse=True)
         rows = []
-        for rank, (score, c, o, windowed, window) in enumerate(found, start=1):
+        for rank, (c, score, o, windowed, window) in enumerate(found, start=1):
             statement, statement_score = None, None
             if statement_vectors:
                 cv = section_vec(c)
                 statement, statement_score = max(((st, float(cv @ v)) for st, v in statement_vectors),
                                                  key=lambda item: item[1])
-            rows.append(GapRow(c, o, score, windowed, window, statement, statement_score, rank))
+                statement_score = min(1.0, statement_score)
+            rows.append(GapRow(c, o, min(1.0, score), windowed, window, statement, statement_score, rank))
 
         page_score, best_url = 0.0, ""
         page_vec = vectors.get(side.text)
@@ -157,10 +179,17 @@ def analyze_gap(competitors: Sequence[Document], own: Sequence[Document], embed:
                 other_vec = vectors.get(other.text)
                 if other_vec is not None and (not best_url or float(page_vec @ other_vec) > page_score):
                     page_score, best_url = float(page_vec @ other_vec), other.doc.url
+        dropped = len(side.sections) - len(rows)
+        notes = [SINGLE_SECTION_NOTE] if side.level is None else []
+        if dropped:
+            notes.append(f"{dropped} Abschnitte konnten nicht eingebettet werden und fehlen." if dropped > 1
+                         else "1 Abschnitt konnte nicht eingebettet werden und fehlt.")
+        if page_vec is None:
+            notes.append(NO_PAGE_VECTOR_NOTE)
         pages.append(GapPage(
             url=side.doc.url, level=side.level, sections=len(side.sections),
-            words=sum(s.words for s in side.sections), page_score=page_score, best_own_url=best_url,
-            rows=rows, note=SINGLE_SECTION_NOTE if side.level is None else ""))
+            words=sum(s.words for s in side.sections), page_score=min(1.0, page_score),
+            best_own_url=best_url, rows=rows, note=" ".join(notes), dropped=dropped))
 
     return GapResult(
         pages=pages,

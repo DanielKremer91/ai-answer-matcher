@@ -203,3 +203,113 @@ def test_sections_without_embedding_are_dropped():
 
     result = run([competitor()], [own_page()], embed=embed)
     assert {r.competitor.title for r in result.pages[0].rows} == {"Kosten", "Förderung"}
+
+
+def long_own(topic: str, n_fill: int = 9) -> str:
+    return "\n".join(sentence(f"{topic}{i}x", 20) for i in range(n_fill + 1))
+
+
+def test_windows_are_built_for_at_most_five_own_sections_per_competitor_section():
+    short = sentence("thema", 20)
+    comp = page("https://wett.de/a", SOURCE, ("Thema", short))
+    bodies = [long_own(f"fuell{k}n") for k in range(20)]
+    own = page("https://me.de/a", OWN, *[(f"Eigen {k}", b) for k, b in enumerate(bodies)])
+    recorder = Recorder()
+    result = run([comp], [own], embed=recorder)
+    assert len(recorder.calls) == 2
+    window_texts = recorder.calls[1]
+    touched = {k for k, b in enumerate(bodies) if any(w in b for w in window_texts)}
+    assert window_texts and len(touched) <= 5
+    assert len(result.pages[0].rows) == 1
+
+
+def test_best_section_with_matching_content_is_found_when_in_the_top_five():
+    short = sentence("thema", 20)
+    comp = page("https://wett.de/a", SOURCE, ("Thema", short))
+    match = "\n".join([sentence(f"fuell{i}x", 20) for i in range(4)] + [short]
+                      + [sentence(f"fuell{i}y", 20) for i in range(5)])
+    sections = [(f"Eigen {k}", long_own(f"andere{k}n")) for k in range(19)]
+    sections.insert(7, ("Treffer", match))
+    result = run([comp], [page("https://me.de/a", OWN, *sections)])
+    (row,) = result.pages[0].rows
+    assert row.own.title == "Treffer"
+    assert row.windowed and row.best_window == short
+    assert row.score > 0.9
+
+
+def test_cap_does_not_change_a_small_case():
+    short = sentence("thema", 20)
+    comp = page("https://wett.de/a", SOURCE, ("Thema", short))
+    match = "\n".join([sentence(f"fuell{i}x", 20) for i in range(4)] + [short]
+                      + [sentence(f"fuell{i}y", 20) for i in range(5)])
+    own = page("https://me.de/a", OWN, ("Anderes", long_own("anders")), ("Treffer", match),
+               ("Kurz", words("kurz", 12)))
+    recorder = Recorder()
+    result = run([comp], [own], embed=recorder)
+    (row,) = result.pages[0].rows
+    assert (row.own.title, row.windowed, row.best_window) == ("Treffer", True, short)
+    # Both long sections are among the top 5, so both get windows, as without any cap.
+    assert any(w in long_own("anders") for w in recorder.calls[1])
+
+
+def test_identical_sections_score_exactly_one():
+    comp = page("https://wett.de/a", SOURCE, ("Kosten", KOSTEN), ("Förderung", FOERDERUNG))
+    own = page("https://me.de/a", OWN, ("Preise", KOSTEN), ("Zuschüsse", FOERDERUNG))
+    result = run([comp], [own])
+    assert [r.score for r in result.pages[0].rows] == [1.0, 1.0]
+    assert result.pages[0].page_score <= 1.0
+
+
+def test_dropped_sections_are_reported():
+    def embed(texts):
+        return [None if "garantie0" in t else bow_vector(t, 512) for t in texts]
+
+    result = run([competitor()], [own_page()], embed=embed)  # the page text contains the marker too
+    (gap_page,) = result.pages
+    assert gap_page.dropped == 1
+    assert "1 Abschnitt konnte nicht eingebettet werden und fehlt." in gap_page.note
+    assert NOTE not in gap_page.note
+
+    def embed_two(texts):
+        return [None if "garantie0" in t or "foerder0" in t else bow_vector(t, 512) for t in texts]
+
+    gap_page = run([competitor()], [own_page()], embed=embed_two).pages[0]
+    assert gap_page.dropped == 2
+    assert gap_page.note.startswith("2 Abschnitte konnten nicht eingebettet werden und fehlen.")
+
+    def embed_sections_only(texts):  # drops the sections, keeps the page vector
+        return [None if t.startswith(("garantie0", "foerder0")) else bow_vector(t, 512) for t in texts]
+
+    gap_page = run([competitor()], [own_page()], embed=embed_sections_only).pages[0]
+    assert gap_page.note == "2 Abschnitte konnten nicht eingebettet werden und fehlen."
+
+
+def test_dropped_note_follows_single_section_note():
+    comp = Document("https://wett.de/a", "Erster Absatz über Kosten.\nZweiter Absatz über Förderung.", SOURCE)
+
+    def embed(texts):
+        return [None if "Erster Absatz" in t and "Zweiter" not in t else bow_vector(t, 512) for t in texts]
+
+    # The single section (the whole page) still has a vector here, so only the single-section note shows.
+    assert run([comp], [own_page()], embed=embed).pages[0].note == NOTE
+
+    def embed_none(texts):
+        return [None if "Erster Absatz" in t else bow_vector(t, 512) for t in texts]
+
+    gap_page = run([comp], [own_page()], embed=embed_none).pages[0]
+    assert gap_page.rows == [] and gap_page.dropped == 1
+    assert gap_page.note == f"{NOTE} 1 Abschnitt konnte nicht eingebettet werden und fehlt. " \
+                            "Kein Seitenvektor, Ganztext-Wert nicht verfügbar."
+    assert gap_page.page_score == 0.0 and gap_page.best_own_url == ""
+
+
+def test_missing_page_vector_is_noted():
+    comp = competitor()
+
+    def embed(texts):
+        return [None if t == plain_text(comp) else bow_vector(t, 512) for t in texts]
+
+    gap_page = run([comp], [own_page()], embed=embed).pages[0]
+    assert gap_page.note == "Kein Seitenvektor, Ganztext-Wert nicht verfügbar."
+    assert gap_page.best_own_url == "" and gap_page.dropped == 0
+    assert len(gap_page.rows) == 3
