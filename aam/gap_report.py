@@ -12,7 +12,7 @@ from aam.report import _count, _de, _excel_frame, _frame, _score
 
 SHEETS = ("Abschnitte", "Protokoll")
 _BASE_COLUMNS = ["Wettbewerber-URL", "Rang", "Abschnitt (Wettbewerber)", "Wörter", "Beste eigene URL",
-                 "Eigener Abschnitt", "Wörter eigen", "Kosinus", "Bestes Fenster"]
+                 "Eigener Abschnitt", "Wörter eigen", "Kosinus", "Vergleich", "Bestes Fenster"]
 _AI_COLUMNS = ["Nächste AI-Aussage", "Kosinus AI-Aussage"]
 _TEXT_COLUMNS = ["Text Wettbewerber", "Text eigen"]
 
@@ -24,7 +24,7 @@ def sections_frame(result: GapResult) -> pd.DataFrame:
     for gap_page in result.pages:
         for row in gap_page.rows:
             cells = [gap_page.url, row.rank, row.competitor.title, row.competitor.words, row.own.url,
-                     row.own.title, row.own.words, _score(row.score), row.best_window]
+                     row.own.title, row.own.words, _score(row.score), row.method, row.best_window]
             if with_answer:
                 cells += [row.statement.text if row.statement else "", _score(row.statement_score)]
             cells += [row.competitor.text, row.own.text]
@@ -54,7 +54,7 @@ def gap_protocol_lines(result: GapResult) -> list[str]:
 
 
 def gap_summary(result: GapResult) -> str:
-    """Reading hint for the first competitor page: how many sections have a counterpart."""
+    """Reading hint for the first competitor page: the range of the scores and where to start reading."""
     if not result.pages or not result.pages[0].rows:
         return ""
     gap_page = result.pages[0]
@@ -64,16 +64,10 @@ def gap_summary(result: GapResult) -> str:
         if gap_page.note:
             return gap_page.note
         return f"{gap_page.url}: ein Abschnitt, Kosinus {_de(rows[0].score)} gegen {rows[0].own.url}."
-    median = statistics.median(row.score for row in rows)
-    covered = sum(row.score >= median for row in rows)
-    missing = n - covered
-    if missing == 0:
-        return (f"{gap_page.url}: alle {n} Abschnitte haben bei dir einen Gegenpart mit Kosinus ab "
-                f"{_de(median)}.")
-    tail = ("Der Abschnitt am Ende der Liste ist der Kandidat für eine Lücke." if missing == 1
-            else f"Die {missing} Abschnitte am Ende der Liste sind die Kandidaten für Lücken.")
-    return (f"{gap_page.url}: {covered} von {n} Abschnitten haben bei dir einen Gegenpart mit Kosinus ab "
-            f"{_de(median)}. {tail}")
+    scores = [row.score for row in rows]
+    return (f"{gap_page.url}: {n} Abschnitte, Kosinus von {_de(min(scores))} bis {_de(max(scores))}. "
+            f"Die untere Hälfte der Liste (Kosinus unter {_de(statistics.median(scores))}) zuerst prüfen, "
+            "dort stehen die Kandidaten für Lücken.")
 
 
 def _protocol_frame(result: GapResult) -> pd.DataFrame:

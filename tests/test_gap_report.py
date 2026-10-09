@@ -16,7 +16,7 @@ from aam.segment import segment_answer
 from tests.fakes import ANSWER, bow_vector
 
 BASE = ["Keyword/Prompt", "Wettbewerber-URL", "Rang", "Abschnitt (Wettbewerber)", "Wörter",
-        "Beste eigene URL", "Eigener Abschnitt", "Wörter eigen", "Kosinus", "Bestes Fenster"]
+        "Beste eigene URL", "Eigener Abschnitt", "Wörter eigen", "Kosinus", "Vergleich", "Bestes Fenster"]
 AI = ["Nächste AI-Aussage", "Kosinus AI-Aussage"]
 TEXTS = ["Text Wettbewerber", "Text eigen"]
 
@@ -142,37 +142,30 @@ def test_summary_without_rows_is_empty():
 def test_summary_wording():
     result = run()
     scores = sorted(r.score for r in result.pages[0].rows)
-    median = scores[1]
-    k = sum(s >= median for s in scores)
-    text = gap_summary(result)
-    shown = f"{median:.2f}".replace(".", ",")
-    assert k == 2
-    assert text == (f"https://wett.de/a: {k} von 3 Abschnitten haben bei dir einen Gegenpart mit Kosinus "
-                    f"ab {shown}. Der Abschnitt am Ende der Liste ist der Kandidat für eine Lücke.")
+    low, median, high = (f"{v:.2f}".replace(".", ",") for v in (scores[0], scores[1], scores[2]))
+    assert gap_summary(result) == (
+        f"https://wett.de/a: 3 Abschnitte, Kosinus von {low} bis {high}. Die untere Hälfte der Liste "
+        f"(Kosinus unter {median}) zuerst prüfen, dort stehen die Kandidaten für Lücken.")
 
 
-def test_summary_for_two_sections_with_one_candidate():
+def test_summary_for_two_sections():
     text = gap_summary(with_scores(run(), [0.9, 0.5]))
-    assert text == ("https://wett.de/a: 1 von 2 Abschnitten haben bei dir einen Gegenpart mit Kosinus ab 0,70. "
-                    "Der Abschnitt am Ende der Liste ist der Kandidat für eine Lücke.")
+    assert text == ("https://wett.de/a: 2 Abschnitte, Kosinus von 0,50 bis 0,90. Die untere Hälfte der Liste "
+                    "(Kosinus unter 0,70) zuerst prüfen, dort stehen die Kandidaten für Lücken.")
 
 
-def test_summary_with_several_candidates_uses_plural():
+def test_summary_uses_the_median_of_an_odd_and_an_even_number_of_rows():
     text = gap_summary(with_scores(run(), [0.9, 0.8, 0.3, 0.2, 0.1]))
-    assert text == ("https://wett.de/a: 3 von 5 Abschnitten haben bei dir einen Gegenpart mit Kosinus ab 0,30. "
-                    "Die 2 Abschnitte am Ende der Liste sind die Kandidaten für Lücken.")
+    assert text == ("https://wett.de/a: 5 Abschnitte, Kosinus von 0,10 bis 0,90. Die untere Hälfte der Liste "
+                    "(Kosinus unter 0,30) zuerst prüfen, dort stehen die Kandidaten für Lücken.")
+    text = gap_summary(with_scores(run(), [0.9, 0.6, 0.4, 0.2]))
+    assert "Kosinus von 0,20 bis 0,90" in text and "(Kosinus unter 0,50)" in text
 
 
-def test_summary_with_ties_counts_every_row_at_the_median():
-    # median 0.6, three rows at or above it (0.9, 0.6, 0.6), one below
-    text = gap_summary(with_scores(run(), [0.9, 0.6, 0.6, 0.2]))
-    assert text == ("https://wett.de/a: 3 von 4 Abschnitten haben bei dir einen Gegenpart mit Kosinus ab 0,60. "
-                    "Der Abschnitt am Ende der Liste ist der Kandidat für eine Lücke.")
-
-
-def test_summary_when_every_section_has_a_counterpart():
+def test_summary_with_equal_scores_still_reads_the_same_way():
     text = gap_summary(with_scores(run(), [0.8, 0.8, 0.8]))
-    assert text == "https://wett.de/a: alle 3 Abschnitte haben bei dir einen Gegenpart mit Kosinus ab 0,80."
+    assert text == ("https://wett.de/a: 3 Abschnitte, Kosinus von 0,80 bis 0,80. Die untere Hälfte der Liste "
+                    "(Kosinus unter 0,80) zuerst prüfen, dort stehen die Kandidaten für Lücken.")
 
 
 def test_summary_for_a_single_section_page_returns_its_note():
@@ -208,3 +201,19 @@ def test_very_long_texts_are_truncated_in_excel():
         assert max(len(v) for v in values) <= 32767
         longest = max(values, key=len)
         assert longest.endswith("[gekürzt]")
+
+
+def test_vergleich_column_follows_kosinus_and_names_the_method():
+    comp = page("https://wett.de/a", SOURCE, ("Kosten", KOSTEN), ("Lang", "\n".join(
+        [" ".join(f"lang{i}x{j}" for j in range(20)) + "." for i in range(10)] + [FOERDERUNG])))
+    result = run(comps=[comp])
+    frame = sections_frame(result)
+    columns = list(frame.columns)
+    assert columns.index("Vergleich") == columns.index("Kosinus") + 1
+    by_title = frame.set_index("Abschnitt (Wettbewerber)")["Vergleich"]
+    assert by_title["Kosten"] == "Ganztext"
+    assert by_title["Lang"] == "Fenster aus Wettbewerber-Abschnitt"
+    assert frame.set_index("Abschnitt (Wettbewerber)")["Bestes Fenster"]["Lang"] == FOERDERUNG
+    assert frame.set_index("Abschnitt (Wettbewerber)")["Bestes Fenster"]["Kosten"] == ""
+    excel = pd.read_excel(io.BytesIO(gap_to_excel(result)), sheet_name="Abschnitte")
+    assert "Vergleich" in excel.columns
