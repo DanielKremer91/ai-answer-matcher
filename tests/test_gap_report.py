@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import io
+from dataclasses import replace
 from datetime import date
 
 import pandas as pd
+from openpyxl import load_workbook
 
 from aam.gap import analyze_gap
 from aam.gap_report import gap_protocol_lines, gap_summary, gap_to_excel, sections_frame
@@ -124,6 +126,19 @@ def test_protocol_sheet_lists_the_lines():
     assert all(line in values for line in gap_protocol_lines(result))
 
 
+def with_scores(result, scores, **page_changes):
+    """The first page of `result` with its rows cut or reused to carry exactly these scores."""
+    gap_page = result.pages[0]
+    rows = [replace(gap_page.rows[i % len(gap_page.rows)], score=score, rank=i + 1) for i, score in enumerate(scores)]
+    return replace(result, pages=[replace(gap_page, rows=rows, **page_changes)])
+
+
+def test_summary_without_rows_is_empty():
+    result = run()
+    assert gap_summary(with_scores(result, [])) == ""
+    assert gap_summary(replace(result, pages=[])) == ""
+
+
 def test_summary_wording():
     result = run()
     scores = sorted(r.score for r in result.pages[0].rows)
@@ -131,6 +146,65 @@ def test_summary_wording():
     k = sum(s >= median for s in scores)
     text = gap_summary(result)
     shown = f"{median:.2f}".replace(".", ",")
-    assert text == (f"https://wett.de/a: {k} von 3 Abschnitten haben bei dir einen Gegenpart mit Kosinus "
-                    f"über {shown}; die {3 - k} Abschnitte am Ende der Liste sind die Kandidaten für Lücken.")
     assert k == 2
+    assert text == (f"https://wett.de/a: {k} von 3 Abschnitten haben bei dir einen Gegenpart mit Kosinus "
+                    f"ab {shown}. Der Abschnitt am Ende der Liste ist der Kandidat für eine Lücke.")
+
+
+def test_summary_for_two_sections_with_one_candidate():
+    text = gap_summary(with_scores(run(), [0.9, 0.5]))
+    assert text == ("https://wett.de/a: 1 von 2 Abschnitten haben bei dir einen Gegenpart mit Kosinus ab 0,70. "
+                    "Der Abschnitt am Ende der Liste ist der Kandidat für eine Lücke.")
+
+
+def test_summary_with_several_candidates_uses_plural():
+    text = gap_summary(with_scores(run(), [0.9, 0.8, 0.3, 0.2, 0.1]))
+    assert text == ("https://wett.de/a: 3 von 5 Abschnitten haben bei dir einen Gegenpart mit Kosinus ab 0,30. "
+                    "Die 2 Abschnitte am Ende der Liste sind die Kandidaten für Lücken.")
+
+
+def test_summary_with_ties_counts_every_row_at_the_median():
+    # median 0.6, three rows at or above it (0.9, 0.6, 0.6), one below
+    text = gap_summary(with_scores(run(), [0.9, 0.6, 0.6, 0.2]))
+    assert text == ("https://wett.de/a: 3 von 4 Abschnitten haben bei dir einen Gegenpart mit Kosinus ab 0,60. "
+                    "Der Abschnitt am Ende der Liste ist der Kandidat für eine Lücke.")
+
+
+def test_summary_when_every_section_has_a_counterpart():
+    text = gap_summary(with_scores(run(), [0.8, 0.8, 0.8]))
+    assert text == "https://wett.de/a: alle 3 Abschnitte haben bei dir einen Gegenpart mit Kosinus ab 0,80."
+
+
+def test_summary_for_a_single_section_page_returns_its_note():
+    single = Document("https://wett.de/b", "Erster Absatz über Kosten.\nZweiter Absatz.", SOURCE)
+    result = run(comps=[single])
+    assert gap_summary(result) == "Die Seite hat nur einen Abschnitt, verglichen wird die ganze Seite."
+
+
+def test_summary_for_a_single_section_without_note_names_score_and_own_url():
+    result = run()
+    one = with_scores(result, [0.5], note="")
+    assert gap_summary(one) == f"https://wett.de/a: ein Abschnitt, Kosinus 0,50 gegen {one.pages[0].rows[0].own.url}."
+
+
+def test_protocol_line_without_whole_text_value():
+    result = run()
+    result = replace(result, pages=[replace(result.pages[0], best_own_url="", page_score=0.0)])
+    line = gap_protocol_lines(result)[0]
+    assert line.endswith(", Ganztext-Wert nicht verfügbar")
+    assert "gegen" not in line
+
+
+def test_very_long_texts_are_truncated_in_excel():
+    comp = page("https://wett.de/a", SOURCE, ("Lang", "wort " * 10000), ("Kurz", FOERDERUNG))
+    owns = page("https://me.de/a", OWN, ("Lang", "text " * 10000), ("Kurz", FOERDERUNG))
+    result = run(comps=[comp], owns=[owns])
+    assert max(len(r.competitor.text) for r in result.pages[0].rows) > 32767
+    workbook = load_workbook(io.BytesIO(gap_to_excel(result)))
+    sheet = workbook["Abschnitte"]
+    header = [c.value for c in sheet[1]]
+    for name in ("Text Wettbewerber", "Text eigen"):
+        values = [row[header.index(name)].value for row in sheet.iter_rows(min_row=2)]
+        assert max(len(v) for v in values) <= 32767
+        longest = max(values, key=len)
+        assert longest.endswith("[gekürzt]")

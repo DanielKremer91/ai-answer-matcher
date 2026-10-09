@@ -73,7 +73,7 @@ Ausgabe pro Wettbewerber-Seite:
 - **Tabelle,** absteigend nach Kosinus: Abschnitt des Wettbewerbers (Titel, Wörter), bester eigener Abschnitt (URL, Titel, Wörter), Kosinus, bestes Fenster (falls gefenstert), optional nächste AI-Aussage mit Kosinus. Dazu die Texte beider Abschnitte zum Nachlesen.
 - **Excel:** ein Blatt „Abschnitte" (die Tabelle mit Keyword/Prompt als erste Spalte, leer ohne AI-Antwort) und ein Blatt „Protokoll".
 
-Die untersten Zeilen der Tabelle sind die Lücken. Das Tool schreibt kein „fehlt" in die Tabelle; die Oberfläche erklärt die Lesart.
+Die untersten Zeilen der Tabelle sind die Lücken. Das Tool schreibt kein „fehlt" in die Tabelle; die Oberfläche erklärt die Lesart. Der Lesehinweis (`gap_summary`, für die erste Wettbewerber-Seite) lautet: „{url}: {k} von {n} Abschnitten haben bei dir einen Gegenpart mit Kosinus ab {Median}. Die {m} Abschnitte am Ende der Liste sind die Kandidaten für Lücken." (bei m = 1: „Der Abschnitt am Ende der Liste ist der Kandidat für eine Lücke."; bei m = 0: „{url}: alle {n} Abschnitte haben bei dir einen Gegenpart mit Kosinus ab {Median}."; bei einem einzigen Abschnitt: dessen Hinweis oder „{url}: ein Abschnitt, Kosinus {x} gegen {eigene URL}."). Dabei zählt k alle Zeilen mit Kosinus ab dem Median (Gleichstände mitgezählt), m = n − k.
 
 ## 7. Stufe-1-Ergänzung: Nähe zum Quell-Chunk
 

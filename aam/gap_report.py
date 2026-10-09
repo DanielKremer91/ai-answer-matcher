@@ -40,10 +40,11 @@ def _level(level) -> str:
 def gap_protocol_lines(result: GapResult) -> list[str]:
     lines = []
     for gap_page in result.pages:
+        whole = (f"Ganztext-Wert {_de(gap_page.page_score)} gegen {gap_page.best_own_url}"
+                 if gap_page.best_own_url else "Ganztext-Wert nicht verfügbar")
         lines.append(f"{gap_page.url}: Abschnittsebene {_level(gap_page.level)}, "
                      f"{_count(gap_page.sections, 'Abschnitt', 'Abschnitte')}, "
-                     f"{_count(gap_page.words, 'Wort', 'Wörter')}, "
-                     f"Ganztext-Wert {_de(gap_page.page_score)} gegen {gap_page.best_own_url}")
+                     f"{_count(gap_page.words, 'Wort', 'Wörter')}, {whole}")
         if gap_page.note:
             lines.append(gap_page.note)
     for url, level, sections in result.own_pages:
@@ -57,13 +58,22 @@ def gap_summary(result: GapResult) -> str:
     if not result.pages or not result.pages[0].rows:
         return ""
     gap_page = result.pages[0]
-    scores = [row.score for row in gap_page.rows]
-    median = statistics.median(scores)
-    total = len(scores)
-    covered = sum(score >= median for score in scores)
-    return (f"{gap_page.url}: {covered} von {total} Abschnitten haben bei dir einen Gegenpart mit Kosinus "
-            f"über {_de(median)}; die {total - covered} Abschnitte am Ende der Liste sind die Kandidaten "
-            "für Lücken.")
+    rows = gap_page.rows
+    n = len(rows)
+    if n == 1:
+        if gap_page.note:
+            return gap_page.note
+        return f"{gap_page.url}: ein Abschnitt, Kosinus {_de(rows[0].score)} gegen {rows[0].own.url}."
+    median = statistics.median(row.score for row in rows)
+    covered = sum(row.score >= median for row in rows)
+    missing = n - covered
+    if missing == 0:
+        return (f"{gap_page.url}: alle {n} Abschnitte haben bei dir einen Gegenpart mit Kosinus ab "
+                f"{_de(median)}.")
+    tail = ("Der Abschnitt am Ende der Liste ist der Kandidat für eine Lücke." if missing == 1
+            else f"Die {missing} Abschnitte am Ende der Liste sind die Kandidaten für Lücken.")
+    return (f"{gap_page.url}: {covered} von {n} Abschnitten haben bei dir einen Gegenpart mit Kosinus ab "
+            f"{_de(median)}. {tail}")
 
 
 def _protocol_frame(result: GapResult) -> pd.DataFrame:
