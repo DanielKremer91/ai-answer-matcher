@@ -24,7 +24,7 @@ Nicht-Ziele: keine Schwelle für „fehlt" (die sortierte Liste mit Werten reich
 
 Eingabe ist der Main Content einer Seite, ein Absatz pro Zeile. Überschriften sind Zeilen der Form `# Titel` bis `###### Titel`. Sie stammen aus trafilatura (Markdown-Ausgabe) oder aus dem Frog-Snippet `examples/screaming-frog-main-content.js`.
 
-- **Abschnittsebene:** die kleinste Überschriftennummer größer als 1, die auf der Seite mindestens zweimal vorkommt (also H2 vor H3 vor H4). Gibt es keine solche Ebene, ist die ganze Seite ein Abschnitt mit dem Titel der H1, sonst „Gesamte Seite".
+- **Abschnittsebene:** die kleinste Überschriftennummer größer als 1, die auf der Seite mindestens einmal vorkommt (also H2 vor H3 vor H4). Gibt es keine solche Ebene, ist die ganze Seite ein Abschnitt mit dem Titel der H1, sonst „Gesamte Seite".
 - **Abschnitt:** alles von einer Überschrift der Abschnittsebene bis zur nächsten Überschrift derselben oder einer höheren Ebene. Tiefer liegende Überschriften bleiben als Textzeilen (ohne Markierung) im Abschnitt. Tabellenzeilen und Listen gehören zum Abschnitt.
 - **Einleitung:** Text vor der ersten Abschnittsüberschrift wird ein Abschnitt mit dem Titel der H1, sonst „Einleitung". Leere Abschnitte (Überschrift ohne Text) entfallen.
 - `Section(url, origin, index, title, level, text, words)`.

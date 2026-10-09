@@ -30,11 +30,12 @@ def test_heading_helpers():
     assert heading_level("Text") is None
 
 
-def test_section_level_is_smallest_level_above_one_with_two_occurrences():
+def test_section_level_is_smallest_level_above_one_that_occurs():
     assert section_level(PAGE) == 2
     assert section_level("# T\n### A\ntext\n### B\ntext") == 3
-    assert section_level("# T\n## A\ntext\n### B\ntext\n### C\ntext") == 3
-    assert section_level("# T\n## A\ntext") is None
+    assert section_level("# T\n## A\ntext\n### B\ntext\n### C\ntext") == 2
+    assert section_level("# T\n## A\ntext") == 2
+    assert section_level("# T\n### A\ntext\n## B\ntext") == 2
     assert section_level("Nur Text") is None
     assert section_level("# A\ntext\n# B\ntext") is None
 
@@ -61,11 +62,10 @@ def test_page_with_only_h3_uses_level_three():
     assert [(s.title, s.level) for s in sections] == [("A", 3), ("B", 3)]
 
 
-def test_page_with_a_single_h2_is_one_section_titled_with_the_h1():
+def test_page_with_a_single_h2_is_split_into_intro_and_that_section():
     sections = split_sections(doc("# Mein Titel\nEins.\n## Nur eine\nZwei."))
-    assert len(sections) == 1
-    assert (sections[0].title, sections[0].level, sections[0].index) == ("Mein Titel", 0, 0)
-    assert sections[0].text == "Mein Titel\nEins.\nNur eine\nZwei."
+    assert [(s.index, s.title, s.level, s.text) for s in sections] == [
+        (0, "Mein Titel", 0, "Eins."), (1, "Nur eine", 2, "Zwei.")]
 
 
 def test_page_without_headings_is_gesamte_seite():

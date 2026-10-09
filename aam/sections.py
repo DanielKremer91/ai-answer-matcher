@@ -42,14 +42,10 @@ def _lines(text: str) -> list[str]:
 
 
 def section_level(text: str) -> Optional[int]:
-    """Smallest heading level above 1 that occurs at least twice; None when there is none."""
-    counts: dict[int, int] = {}
-    for line in _lines(text):
-        level = heading_level(line)
-        if level is not None and level > 1:
-            counts[level] = counts.get(level, 0) + 1
-    repeated = [level for level, n in counts.items() if n >= 2]
-    return min(repeated) if repeated else None
+    """Smallest heading level above 1 that occurs at least once; None when there is none."""
+    levels = {heading_level(line) for line in _lines(text)}
+    found = [level for level in levels if level is not None and level > 1]
+    return min(found) if found else None
 
 
 def plain_text(doc_or_text) -> str:

@@ -114,7 +114,7 @@ def test_protocol_lines_wording_for_two_and_one_sections():
     lines = gap_protocol_lines(run(comps=[single], owns=[one_own]))
     assert lines[0].startswith("https://wett.de/b: Abschnittsebene keine, 1 Abschnitt, 6 Wörter, Ganztext-Wert ")
     assert lines[1] == "Die Seite hat nur einen Abschnitt, verglichen wird die ganze Seite."
-    assert lines[2] == "Eigene Seite https://me.de/b: Abschnittsebene keine, 1 Abschnitt"
+    assert lines[2] == "Eigene Seite https://me.de/b: Abschnittsebene H2, 1 Abschnitt"
     assert len(lines) == 3
 
 
