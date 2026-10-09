@@ -21,6 +21,17 @@ def test_extract_text_returns_paragraphs_on_separate_lines():
     assert len([line for line in lines if line.strip()]) >= 3
 
 
+def test_extract_text_marks_headings_and_strips_bold_markers():
+    lines = extract_text(HTML).split("\n")
+    assert lines[0].startswith("# ") and "Dachsanierung Kosten" in lines[0]
+    assert all(line.strip() for line in lines)
+    bold = "<html><body><article><h1>T</h1><h2>Kosten</h2><p>Die <b>Sanierung</b> kostet viel Geld pro Quadratmeter heute.</p></article></body></html>"
+    text = extract_text(bold)
+    assert "**" not in text and "__" not in text
+    assert any(line.startswith("## ") and "Kosten" in line for line in text.split("\n"))
+    assert "Die Sanierung kostet" in text
+
+
 def test_extract_text_empty_page():
     assert extract_text("<html><body></body></html>") == ""
 

@@ -7,6 +7,7 @@ from typing import Sequence
 import numpy as np
 
 from aam.models import Chunk, ChunkStats, Document
+from aam.sections import strip_heading_marker
 from aam.text import count_words, normalize_space, split_sentences
 
 
@@ -60,7 +61,7 @@ def _chunk_document(doc: Document, target_words: int, *, merge_short: bool, spli
     split = 0
     examples: list[tuple[str, int, int]] = []
     for line in doc.text.split("\n"):
-        paragraph = normalize_space(line)
+        paragraph = normalize_space(strip_heading_marker(line.strip()))
         if not paragraph:
             continue
         words = count_words(paragraph)

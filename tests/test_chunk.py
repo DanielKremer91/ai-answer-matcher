@@ -184,3 +184,12 @@ def test_stats_list_the_split_paragraphs_and_the_settings():
     _, stats = chunk_documents(docs, 20, split_long=False, merge_short=False)
     assert stats.split_examples == () and stats.split == 0
     assert (stats.merge_short, stats.split_long) == (False, False)
+
+
+def test_heading_markers_are_stripped_and_the_heading_merges_with_the_next_paragraph():
+    text = "## Kosten\nDie Sanierung kostet 100 Euro pro Quadratmeter und hängt vom Material ab."
+    chunks, merged, split = chunk_document(doc(text), 20)
+    assert [c.text for c in chunks] == [
+        "Kosten Die Sanierung kostet 100 Euro pro Quadratmeter und hängt vom Material ab."]
+    assert (merged, split) == (1, 0)
+    assert "#" not in chunks[0].text

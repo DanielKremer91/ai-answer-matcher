@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Callable, Optional, Sequence
 
 import httpx
@@ -10,13 +11,21 @@ import trafilatura
 from aam.models import Document, FailedUrl
 
 _TEXT_TYPES = ("html", "xml", "text/plain")
+_BOLD = re.compile(r"\*\*|__")
 USER_AGENT = "Mozilla/5.0 (compatible; AIAnswerMatcher/1.0)"
 
 
 def extract_text(html) -> str:
-    """Main content with one paragraph per line; "" when nothing usable is found."""
-    text = trafilatura.extract(html, include_comments=False, include_tables=True, favor_recall=True)
-    return text.strip() if text else ""
+    """Main content as Markdown, one paragraph per line; "" when nothing usable is found.
+
+    Headings arrive as `## Title` lines. Bold markers are removed, empty lines dropped.
+    """
+    text = trafilatura.extract(html, include_comments=False, include_tables=True, favor_recall=True,
+                               output_format="markdown")
+    if not text:
+        return ""
+    lines = (_BOLD.sub("", line).strip() for line in text.split("\n"))
+    return "\n".join(line for line in lines if line)
 
 
 def fetch_documents(urls: Sequence[str], origin: str, client: httpx.Client, *, timeout: float = 20.0,
