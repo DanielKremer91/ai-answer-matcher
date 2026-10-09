@@ -26,7 +26,7 @@ def test_prepare_segments_and_chunks_with_the_derived_target():
     assert (prepared.own_stats.documents, prepared.own_stats.chunks, prepared.own_stats.merged) == (2, 3, 2)
     assert prepared.source_stats.chunks == 2
     assert prepared.prechunked is False and prepared.warnings == () and prepared.failed == ()
-    assert prepared.texts_to_embed == 7  # 5 statements + 2 chunks with other text; 3 chunks repeat a statement
+    assert prepared.texts_to_embed == 10  # 5 statements + 2 chunks with other text + 3 whole pages; 3 chunks repeat a statement
 
 
 def test_target_override_changes_the_chunking():
@@ -72,12 +72,12 @@ def test_second_analysis_reuses_cached_embeddings():
     prepared = prepare(KEYWORD, ANSWER, own_docs=OWN_DOCS, source_docs=SOURCE_DOCS)
     seen = []
     analyze(prepared, provider, cache, progress=lambda done, total: seen.append((done, total)))
-    assert provider.calls == 7 and seen[-1] == (7, 7)
+    assert provider.calls == 10 and seen[-1] == (10, 10)
     analyze(prepared, provider, cache, weak_delta=0.3)
-    assert provider.calls == 7
+    assert provider.calls == 10
     fresh = prepare(KEYWORD, ANSWER, own_docs=OWN_DOCS, source_docs=SOURCE_DOCS)
     analyze(fresh, provider, cache)
-    assert provider.calls == 7
+    assert provider.calls == 10
 
 
 def test_rematch_applies_new_thresholds_without_embedding():
@@ -102,13 +102,15 @@ def test_reusing_exported_chunks_gives_the_same_results_and_embeds_less():
     assert (prepared.own_stats.documents, prepared.own_stats.chunks) == (2, 3)
     provider = FakeProvider()
     second = analyze(prepared, provider, None)
-    assert provider.calls == 5  # only the statements; the source chunks repeat two of them
+    assert provider.calls == 6  # the statements and the whole source page; the source chunks repeat two statements
     assert second.meta.prechunked is True
     for a, b in zip(first.match.statements, second.match.statements):
         assert (a.own.url, a.status) == (b.own.url, b.status)
         assert a.own.score == approx(b.own.score, abs=1e-4)
-    for a, b in zip(first.match.pages, second.match.pages):
-        assert a.url == b.url and a.page_score == approx(b.page_score, abs=1e-4)
+    # Page vectors differ on purpose: the first run embeds whole pages, the reused export only carries
+    # chunk vectors, so its own pages fall back to the chunk average.
+    assert {p.url for p in first.match.pages} == {p.url for p in second.match.pages}
+    assert (second.meta.whole_pages, second.meta.mean_pages) == (1, 2)
 
 
 def test_exported_chunks_with_another_dimension_are_rejected():
@@ -217,7 +219,7 @@ def test_analyze_does_not_change_prepared():
     before = prepared.texts_to_embed
     result = analyze(prepared, FakeProvider(), None)
     assert all(c.vector is None for c in all_chunks(prepared))
-    assert prepared.texts_to_embed == before == 7
+    assert prepared.texts_to_embed == before == 10
     assert all(c.vector is not None for c in result.own_chunks + result.source_chunks)
 
 
@@ -261,8 +263,8 @@ def test_prechunked_run_reports_one_continuous_progress():
         *SOURCE_DOCS])
     provider, seen = FakeProvider(), []
     analyze(prepared, provider, None, progress=lambda done, total: seen.append((done, total)))
-    assert provider.calls == 6
-    assert seen[-1] == (6, 6) and {total for _, total in seen} == {6}
+    assert provider.calls == 7  # 5 statements, the whole foerderung page; the extra page equals its one chunk
+    assert seen[-1] == (7, 7) and {total for _, total in seen} == {7}
     done = [d for d, _ in seen]
     assert done == sorted(done)
 
@@ -316,3 +318,49 @@ def test_prepare_passes_the_chunking_switches_through():
     assert prepared.own_stats.merged == 0 and prepared.own_stats.chunks == 5
     assert (prepared.own_stats.merge_short, prepared.own_stats.split_long) == (False, False)
     assert (prepared.source_stats.merge_short, prepared.source_stats.split_long) == (False, False)
+
+
+class RecordingProvider(FakeProvider):
+    def __init__(self, dim=64):
+        super().__init__(dim)
+        self.texts = []
+
+    def _embed_batch(self, texts):
+        self.texts.extend(texts)
+        return super()._embed_batch(texts)
+
+
+def test_pages_are_embedded_whole_when_they_fit_the_model():
+    provider = RecordingProvider()
+    prepared = prepare(KEYWORD, ANSWER, own_docs=OWN_DOCS, source_docs=SOURCE_DOCS)
+    assert set(prepared.page_texts) == {(OWN, d.url) for d in OWN_DOCS} | {(SOURCE, d.url) for d in SOURCE_DOCS}
+    result = analyze(prepared, provider, None)
+    assert OWN_DOCS[0].text in provider.texts and SOURCE_DOCS[0].text in provider.texts
+    assert set(result.page_vectors) == set(prepared.page_texts)
+    assert (result.meta.whole_pages, result.meta.mean_pages) == (3, 0)
+    assert prepared.texts_to_embed == 7 + 3
+
+
+def test_overlong_pages_fall_back_to_the_chunk_average():
+    long_doc = Document("https://me.de/lang", "\n".join(["Ein Satz mit sieben Wörtern drin steht hier."] * 700), OWN)
+    provider = RecordingProvider()
+    result = analyze(prepare(KEYWORD, ANSWER, own_docs=[long_doc, OWN_DOCS[0]]), provider, None)
+    assert long_doc.text not in provider.texts
+    assert (OWN, "https://me.de/lang") not in result.page_vectors
+    assert (OWN, OWN_DOCS[0].url) in result.page_vectors
+    assert (result.meta.whole_pages, result.meta.mean_pages) == (1, 1)
+
+
+def test_reused_chunks_have_no_page_text_and_use_the_average():
+    first = sample_result()
+    prepared = prechunked(first)
+    assert (OWN, "https://me.de/kosten") not in prepared.page_texts
+    result = analyze(prepared, RecordingProvider(), None)
+    assert (result.meta.whole_pages, result.meta.mean_pages) == (1, 2)  # the source whole, own pages averaged
+
+
+def test_rematch_keeps_the_whole_page_vectors():
+    result = sample_result()
+    again = rematch(result, covered_delta=0.1, weak_delta=0.2)
+    assert again.page_vectors is result.page_vectors
+    assert [p.page_score for p in again.match.pages] == [p.page_score for p in result.match.pages]

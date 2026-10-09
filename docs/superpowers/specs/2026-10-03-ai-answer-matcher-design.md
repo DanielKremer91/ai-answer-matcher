@@ -106,7 +106,7 @@ Eine Funktion für eigenen Content und Quellen:
 
 `ChunkStats` zählt Dokumente, Chunks, zusammengelegte und geteilte Absätze und die Verteilung der Wortzahl. Zusammenlegen und Teilen sind einzeln abschaltbar (Seitenleiste); die Einstellung steht im Protokoll, und Schritt 3 listet die geteilten Absätze mit Wortzahl und Fensterzahl auf.
 
-**Seitenvektor.** Längengewichteter Mittelwert der Chunk-Vektoren einer URL (Gewicht = Wortzahl), danach normalisiert. Der Antwortvektor entsteht genauso aus den Aussagen-Vektoren. Dadurch gibt es keine Token-Limit-Probleme und keine zusätzlichen Embedding-Aufrufe.
+**Seitenvektor.** Embedding des kompletten Seitentexts, wenn der Text die Grenze des Anbieters nicht überschreitet (OpenAI 5.000 Wörter, Gemini 1.200, Ollama 4.000, mit abgeschalteter stiller Kürzung). Sonst, und für Seiten aus einem Chunk-Embedding-Export, der längengewichtete Mittelwert der Chunk-Vektoren (Gewicht = Wortzahl), normalisiert. Das Protokoll nennt beide Anzahlen. Der Antwortvektor entsteht genauso aus den Aussagen-Vektoren. Dadurch gibt es keine Token-Limit-Probleme und keine zusätzlichen Embedding-Aufrufe.
 
 ## 7. Matching (`aam.match`)
 

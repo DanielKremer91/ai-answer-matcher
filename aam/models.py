@@ -156,6 +156,8 @@ class RunMeta:
     warnings: tuple[str, ...]
     prechunked: bool = False  # own content came from a chunk-embedding export
     source_target_words: int = 0  # chunk size used for the sources; 0 = same as target_words
+    whole_pages: int = 0  # pages whose vector is the embedding of the whole text
+    mean_pages: int = 0  # pages whose vector is the average of their chunk vectors
 
 
 @dataclass(frozen=True)
@@ -168,3 +170,4 @@ class Result:
     own_stats: ChunkStats
     source_stats: Optional[ChunkStats]
     statement_vectors: list  # kept so thresholds can change without re-embedding
+    page_vectors: dict = field(default_factory=dict)  # (origin, url) -> whole-text vector where available

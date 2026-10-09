@@ -342,3 +342,20 @@ def test_gemini_requests_semantic_similarity_task_type():
     make_provider("gemini", "gemini-embedding-001", api_key="g").embed(["a"])
     body = json.loads(route.calls[0].request.content)
     assert body["requests"][0]["taskType"] == "SEMANTIC_SIMILARITY"
+
+
+def test_fits_whole_text_uses_provider_word_limits():
+    from aam.embeddings import WHOLE_TEXT_WORD_LIMITS, fits_whole_text
+
+    assert fits_whole_text("openai", "ein kurzer Text") is True
+    assert fits_whole_text("gemini", " ".join(["wort"] * (WHOLE_TEXT_WORD_LIMITS["gemini"] + 1))) is False
+    assert fits_whole_text("unbekannt", " ".join(["wort"] * 100)) is True
+
+
+@respx.mock
+def test_ollama_refuses_silent_truncation():
+    import json
+
+    route = respx.post(OLLAMA_URL).mock(return_value=httpx.Response(200, json={"embeddings": [[1.0]]}))
+    make_provider("ollama", "bge-m3").embed(["a"])
+    assert json.loads(route.calls[0].request.content)["truncate"] is False

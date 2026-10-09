@@ -10,11 +10,11 @@ from typing import Callable, Optional, Sequence
 import numpy as np
 
 from aam.chunk import chunk_documents, stats_for
-from aam.embeddings import EmbeddingProvider, embed_cached
+from aam.embeddings import EmbeddingProvider, embed_cached, fits_whole_text
 from aam.ingest.chunks_file import check_dimension
 from aam.ingest.urls import url_key
 from aam.match import match
-from aam.models import Chunk, ChunkStats, Document, FailedUrl, Result, RunMeta, SegmentedAnswer
+from aam.models import OWN, SOURCE, Chunk, ChunkStats, Document, FailedUrl, Result, RunMeta, SegmentedAnswer
 from aam.segment import Embed, segment_answer
 
 MAX_TARGET_DEVIATION = 0.5
@@ -31,12 +31,14 @@ class Prepared:
     warnings: tuple[str, ...]
     prechunked: bool  # own chunks carry vectors from an uploaded export
     source_target_words: int  # chunk size actually used for the sources
+    page_texts: dict = dataclasses.field(default_factory=dict)  # (origin, url) -> full text of the page
 
     @property
     def texts_to_embed(self) -> int:
         """Distinct texts the next analysis sends to the provider at most."""
         texts = {s.text for s in self.answer.statements}
         texts.update(c.text for c in self._chunks_to_embed())
+        texts.update(self.page_texts.values())
         return len(texts)
 
     def _chunks_to_embed(self) -> list[Chunk]:
@@ -99,8 +101,11 @@ def prepare(keyword: str, answer_text: str, *, own_docs: Sequence[Document] = ()
     if benchmarks:
         source_chunks, source_stats = chunk_documents(benchmarks, source_target, merge_short=merge_short,
                                                       split_long=split_long)
+    page_texts = {(SOURCE, d.url): d.text for d in benchmarks if d.text.strip()}
+    if own_chunks is None:
+        page_texts.update({(OWN, d.url): d.text for d in own_docs if d.text.strip()})
     return Prepared(answer, chunks, source_chunks, own_stats, source_stats, tuple(failed), tuple(warnings),
-                    own_chunks is not None, source_target)
+                    own_chunks is not None, source_target, page_texts)
 
 
 class _StagedEmbedder:
@@ -140,7 +145,9 @@ def analyze(prepared: Prepared, provider: EmbeddingProvider, cache, *, covered_d
     statements = prepared.answer.statements
     statement_texts = [s.text for s in statements]
     to_embed = prepared._chunks_to_embed()
-    embedder = _StagedEmbedder(provider, cache, progress, statement_texts + [c.text for c in to_embed])
+    whole_pages = {key: text for key, text in prepared.page_texts.items() if fits_whole_text(provider.name, text)}
+    embedder = _StagedEmbedder(provider, cache, progress,
+                               statement_texts + [c.text for c in to_embed] + list(whole_pages.values()))
 
     def embed_chunks(chunks: list[Chunk]) -> list[Chunk]:
         vectors = embedder.embed([c.text for c in chunks])
@@ -170,8 +177,11 @@ def analyze(prepared: Prepared, provider: EmbeddingProvider, cache, *, covered_d
             warnings.append("1 Chunk konnte nicht eingebettet werden und fehlt in der Auswertung.")
         else:
             warnings.append(f"{dropped} Chunks konnten nicht eingebettet werden und fehlen in der Auswertung.")
+    page_vectors = {key: v for key, v in zip(whole_pages, embedder.embed(list(whole_pages.values())))
+                    if v is not None}
+    pages = {(c.origin, c.url) for c in own + sources}
     matched = match(prepared.answer, statement_vectors, own + sources,
-                    covered_delta=covered_delta, weak_delta=weak_delta)
+                    covered_delta=covered_delta, weak_delta=weak_delta, page_vectors=page_vectors)
     meta = RunMeta(
         keyword=prepared.answer.keyword,
         date=(today or date.today()).isoformat(),
@@ -187,9 +197,11 @@ def analyze(prepared: Prepared, provider: EmbeddingProvider, cache, *, covered_d
         warnings=tuple(warnings),
         prechunked=prepared.prechunked,
         source_target_words=prepared.source_target_words,
+        whole_pages=len(pages & set(page_vectors)),
+        mean_pages=len(pages - set(page_vectors)),
     )
     return Result(meta, matched, prepared.answer, own, sources, prepared.own_stats, prepared.source_stats,
-                  list(statement_vectors))
+                  list(statement_vectors), page_vectors)
 
 
 def _require_statement_vectors(vectors: Sequence[Optional[np.ndarray]]) -> None:
@@ -200,6 +212,6 @@ def _require_statement_vectors(vectors: Sequence[Optional[np.ndarray]]) -> None:
 def rematch(result: Result, *, covered_delta: float, weak_delta: float) -> Result:
     """New thresholds on an existing result; no embedding call."""
     matched = match(result.answer, result.statement_vectors, result.own_chunks + result.source_chunks,
-                    covered_delta=covered_delta, weak_delta=weak_delta)
+                    covered_delta=covered_delta, weak_delta=weak_delta, page_vectors=result.page_vectors)
     meta = dataclasses.replace(result.meta, covered_delta=covered_delta, weak_delta=weak_delta)
     return dataclasses.replace(result, meta=meta, match=matched)

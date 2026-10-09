@@ -300,3 +300,9 @@ def test_protocol_line_names_switched_off_chunking_steps():
     result = sample_result()
     line = protocol_lines(result.answer, stats, None, [])[1]
     assert line.endswith("kurze Absätze nicht zusammengelegt, lange Absätze nicht geteilt")
+
+
+def test_protocol_frame_reports_how_page_vectors_were_built():
+    df = protocol_frame(sample_result())
+    values = dict(zip(df["Angabe"], df["Wert"]))
+    assert values["Seitenvektoren"] == "3 Seiten komplett eingebettet, 0 als Durchschnitt ihrer Chunks"

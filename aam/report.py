@@ -210,6 +210,8 @@ def protocol_frame(result: Result) -> pd.DataFrame:
         ("Segmentierung", METHOD_LABELS[meta.method]),
         ("Schwelle abgedeckt", round(meta.covered_delta, 4)),
         ("Schwelle schwach", round(meta.weak_delta, 4)),
+        ("Seitenvektoren", f"{_count(meta.whole_pages, 'Seite', 'Seiten')} komplett eingebettet, "
+                           f"{meta.mean_pages} als Durchschnitt ihrer Chunks"),
     ]
     rows += [("Chunking", line) for line in protocol_lines(
         result.answer, result.own_stats, result.source_stats, meta.failed, prechunked=meta.prechunked,

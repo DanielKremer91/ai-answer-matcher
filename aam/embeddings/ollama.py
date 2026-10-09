@@ -26,7 +26,7 @@ class OllamaEmbeddings(EmbeddingProvider):
 
     def _embed_batch(self, texts: list[str]) -> list[list[float]]:
         try:
-            resp = self.client.post(f"{self.base_url}/api/embed", json={"model": self.model, "input": texts})
+            resp = self.client.post(f"{self.base_url}/api/embed", json={"model": self.model, "input": texts, "truncate": False})
         except REQUEST_ERRORS as exc:
             raise EmbeddingError(f"ollama: {exc}") from exc
         raise_for_status(resp, "ollama")

@@ -178,6 +178,9 @@ def cached_bytes(slot: str, key, build):
 def show_result(result, shown_warnings=()) -> None:
     st.subheader("Ergebnis")
     st.markdown(report.summary(result))
+    st.caption(f"Seitenvektoren: {result.meta.whole_pages} Seiten komplett eingebettet, "
+               f"{result.meta.mean_pages} als Durchschnitt ihrer Chunks (zu lang für das Modell oder aus einem "
+               "Chunk-Embedding-Export).")
     for warning in result.meta.warnings:
         if warning not in shown_warnings:  # warnings from the chunking step are already on screen
             st.warning(warning)

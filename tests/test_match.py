@@ -156,3 +156,13 @@ def test_statement_pages_keep_the_ten_best_own_pages_and_every_source():
 def test_statement_pages_without_sources_contain_own_pages_only():
     rows = match(answer([1]), [vec(1, 0)], [chunk("/a", OWN, 0, (1, 0))]).statement_pages
     assert [(r.url, r.origin, r.rank) for r in rows] == [("/a", OWN, 1)]
+
+
+def test_given_page_vectors_replace_the_chunk_average():
+    chunks = [chunk("/a", OWN, 0, (1, 0)), chunk("/a", OWN, 1, (0, 1))]
+    averaged = match(answer([1]), [vec(1, 0)], chunks)
+    whole = match(answer([1]), [vec(1, 0)], chunks, page_vectors={(OWN, "/a"): vec(3, 0)})
+    assert averaged.pages[0].page_score == approx(0.7071, abs=1e-3)
+    assert whole.pages[0].page_score == approx(1.0)  # normalised whole-page vector wins
+    assert whole.statement_pages[0].page_score == approx(1.0)
+    assert whole.pages[0].best_chunk_score == approx(1.0)  # chunk level untouched

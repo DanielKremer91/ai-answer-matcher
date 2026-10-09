@@ -117,9 +117,12 @@ Mit OpenAI oder Gemini gehen die Texte der AI-Antwort, deines Contents und der Q
 | Tabelle | Inhalt |
 |---|---|
 | Seiten | Ranking aller Seiten (eigene und Quellen) nach Ähnlichkeit zur ganzen AI-Antwort |
+
 | Themen | Bester Chunk deiner Domain pro Themengebiet, im Vergleich zum besten Quell-Chunk |
 | Aussagen | Bester Chunk deiner Domain pro Aussage, mit Abstand zur besten Quelle und Status |
 | Aussage × Seite | Jede Aussage gegen jede Seite: bester Chunk der Seite und Relevanz der Seite als Ganzes |
+
+Der Seitenvektor für „Seiten" und für die Seiten-Relevanz ist das Embedding des kompletten Seitentexts, solange der Text in das Modell passt (OpenAI und bge-m3 etwa 4.000 bis 5.000 Wörter, Gemini etwa 1.200). Längere Seiten und Seiten aus einem Chunk-Embedding-Export bekommen stattdessen den wortgewichteten Durchschnitt ihrer Chunk-Vektoren. Das Protokoll zählt beide Fälle.
 
 Im Tab „Aussage × Seite" stehen pro Aussage und Seite zwei Werte:
 

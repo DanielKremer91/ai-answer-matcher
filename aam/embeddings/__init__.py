@@ -19,6 +19,16 @@ DEFAULT_EMBED_MODELS = {
     "gemini": "gemini-embedding-001",
     "ollama": "bge-m3",
 }
+# Longest text (in words) that is embedded as one piece; above it the page vector is the average of
+# its chunks. German text runs at roughly 1.5 tokens per word: OpenAI allows 8,191 tokens, Gemini
+# 2,048, bge-m3 8,192. The Ollama request refuses silent truncation, so an over-long text fails
+# visibly and falls back to the average as well.
+WHOLE_TEXT_WORD_LIMITS = {"openai": 5000, "gemini": 1200, "ollama": 4000}
+DEFAULT_WHOLE_TEXT_WORDS = 4000
+
+
+def fits_whole_text(provider_name: str, text: str) -> bool:
+    return len(text.split()) <= WHOLE_TEXT_WORD_LIMITS.get(provider_name, DEFAULT_WHOLE_TEXT_WORDS)
 
 
 def make_provider(
@@ -77,4 +87,4 @@ def embed_cached(
     return [found[text] for text in texts]
 
 
-__all__ = ["PROVIDERS", "DEFAULT_EMBED_MODELS", "EmbeddingError", "EmbeddingProvider", "embed_cached", "make_provider"]
+__all__ = ["PROVIDERS", "DEFAULT_EMBED_MODELS", "WHOLE_TEXT_WORD_LIMITS", "fits_whole_text", "EmbeddingError", "EmbeddingProvider", "embed_cached", "make_provider"]

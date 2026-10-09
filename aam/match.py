@@ -71,7 +71,11 @@ def _words(chunks: Sequence[Chunk], indices: Sequence[int]) -> np.ndarray:
 
 
 def match(answer: SegmentedAnswer, statement_vectors: Sequence[np.ndarray], chunks: Sequence[Chunk], *,
-          covered_delta: float = 0.05, weak_delta: float = 0.15) -> MatchResult:
+          covered_delta: float = 0.05, weak_delta: float = 0.15,
+          page_vectors: Optional[dict] = None) -> MatchResult:
+    """`page_vectors` maps (origin, url) to the embedding of the whole page; pages without one use the
+    word-weighted average of their chunk vectors."""
+    page_vectors = page_vectors or {}
     statements = answer.statements
     s_matrix = unit_rows(np.vstack(statement_vectors).astype(np.float32))
     s_weights = np.array([s.words for s in statements], dtype=np.float32)
@@ -134,7 +138,11 @@ def match(answer: SegmentedAnswer, statement_vectors: Sequence[np.ndarray], chun
             by_url.setdefault(chunk.url, []).append(i)
         rows = []
         for url, indices in by_url.items():
-            page_vector = weighted_mean(matrix[indices], _words(group, indices))
+            whole = page_vectors.get((origin, url))
+            if whole is not None:
+                page_vector = unit_rows(np.asarray(whole, dtype=np.float32)[None, :])[0]
+            else:
+                page_vector = weighted_mean(matrix[indices], _words(group, indices))
             per_statement = sim[:, indices].max(axis=1)
             if has_sources:
                 covered = sum(delta_status(float(per_statement[i] - source_best[i]), covered_delta, weak_delta)

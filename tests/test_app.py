@@ -118,7 +118,7 @@ def test_chunking_step_shows_protocol_ai_chunks_and_embedding_count(backend):
     assert "Quellen: 1 Seite → 2 Chunks" in protocol
     frame = at.dataframe[0].value
     assert list(frame.columns) == ["Thema", "Aussage", "Wortzahl"] and len(frame) == 5
-    assert any("bis zu 7 Texte" in c.value for c in at.caption)
+    assert any("bis zu 10 Texte" in c.value for c in at.caption)
     assert backend.calls == 0 and backend.fetched == []
     assert button(at, ANALYZE_BUTTON).disabled is False
 
