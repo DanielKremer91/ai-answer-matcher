@@ -1,5 +1,6 @@
 from aam.models import OWN, Document
-from aam.sections import HEADING, Section, heading_level, section_level, split_sections, strip_heading_marker
+from aam.sections import (HEADING, Section, heading_level, plain_text, section_level, split_sections,
+                          strip_heading_marker)
 
 
 def doc(text: str) -> Document:
@@ -88,3 +89,27 @@ def test_markers_never_end_up_in_text_and_trailing_spaces_are_tolerated():
     assert [s.title for s in sections] == ["A", "B"]
     assert sections[0].text == "Text a.\nTief\nMehr."
     assert all("#" not in s.text for s in sections)
+
+
+def test_late_h1_does_not_title_the_intro_and_stays_a_plain_line():
+    sections = split_sections(doc("Vorab Text.\n## A\na\n## B\nb\n# Ende\nz"))
+    assert [(s.title, s.level) for s in sections] == [("Einleitung", 0), ("A", 2), ("B", 2)]
+    assert sections[2].text == "b\nEnde\nz"
+    assert all("#" not in s.text for s in sections)
+
+
+def test_second_h1_inside_the_intro_is_kept_as_a_plain_line():
+    sections = split_sections(doc("# T\nintro\n# U\nmore\n## A\na\n## B\nb"))
+    assert [s.title for s in sections] == ["T", "A", "B"]
+    assert sections[0].text == "intro\nU\nmore"
+
+
+def test_crlf_line_endings_give_clean_titles():
+    sections = split_sections(doc("# T\r\n## A\r\na\r\n## B\r\nb"))
+    assert [s.title for s in sections] == ["A", "B"]
+    assert [s.text for s in sections] == ["a", "b"]
+
+
+def test_plain_text_strips_markers_and_empty_lines():
+    assert plain_text("## Kosten\n\n  Text hier.  \n### Tief\r\nMehr.") == "Kosten\nText hier.\nTief\nMehr."
+    assert plain_text(doc("# T\nx")) == "T\nx"

@@ -11,20 +11,45 @@ import trafilatura
 from aam.models import Document, FailedUrl
 
 _TEXT_TYPES = ("html", "xml", "text/plain")
-_BOLD = re.compile(r"\*\*|__")
+_ESCAPABLE = "\\*_`~#[]().!|<>+-{}"
+_ESCAPE = re.compile(r"\\([" + re.escape(_ESCAPABLE) + r"])")
+_PLACEHOLDER = {chr(0xE000 + i): char for i, char in enumerate(_ESCAPABLE)}
+_PLACEHOLDER_OF = {char: key for key, char in _PLACEHOLDER.items()}
+_EMPHASIS = (
+    re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*"),
+    re.compile(r"(?<!\w)__(?=\S)(.+?)(?<=\S)__(?!\w)"),
+    re.compile(r"(?<![\w*])\*(?=[^\s*])(.+?)(?<=[^\s*])\*(?![\w*])"),
+    re.compile(r"(?<!\w)_(?=[^\s_])(.+?)(?<=[^\s_])_(?!\w)"),
+)
+_SUP_SUB = re.compile(r"</?su[bp]>")
+_LIST_MARKER = re.compile(r"^[-*]\s+")
 USER_AGENT = "Mozilla/5.0 (compatible; AIAnswerMatcher/1.0)"
+
+
+def _clean_inline(line: str) -> str:
+    """Remove inline Markdown residue (emphasis, code, strike, escapes, sup/sub, list marker) from one line.
+
+    Heading markers `#` and table pipes stay: the sections need them.
+    """
+    line = _ESCAPE.sub(lambda m: _PLACEHOLDER_OF[m.group(1)], line)  # shield escaped characters
+    line = _SUP_SUB.sub("", line).replace("~~", "").replace("`", "")
+    for pattern in _EMPHASIS:
+        line = pattern.sub(r"\1", line)
+    line = _LIST_MARKER.sub("", line.strip())
+    return "".join(_PLACEHOLDER.get(char, char) for char in line).strip()
 
 
 def extract_text(html) -> str:
     """Main content as Markdown, one paragraph per line; "" when nothing usable is found.
 
-    Headings arrive as `## Title` lines. Bold markers are removed, empty lines dropped.
+    Headings arrive as `## Title` lines. Inline Markdown (emphasis, code, escapes, list markers) is
+    removed, empty lines dropped.
     """
     text = trafilatura.extract(html, include_comments=False, include_tables=True, favor_recall=True,
                                output_format="markdown")
     if not text:
         return ""
-    lines = (_BOLD.sub("", line).strip() for line in text.split("\n"))
+    lines = (_clean_inline(line) for line in text.split("\n"))
     return "\n".join(line for line in lines if line)
 
 

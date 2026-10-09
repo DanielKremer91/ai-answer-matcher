@@ -105,3 +105,27 @@ def test_fetch_documents_turns_extractor_exceptions_into_failures_and_continues(
         docs, failed = fetch_documents(["https://bad.de/", "https://good.de/"], SOURCE, client)
     assert [d.url for d in docs] == ["https://good.de/"]
     assert [(f.url, f.reason) for f in failed] == [("https://bad.de/", "kein Main Content gefunden")]
+
+
+def test_extract_text_removes_inline_markdown_residue():
+    html = """<html><body><article><h1>Dachsanierung <i>heute</i></h1><h2>Kosten <code>x</code> in m<sup>2</sup></h2>
+<p>Der Preis liegt bei 100 Euro zzgl. MwSt.* pro Quadratmeter, ein <i>kursiver</i> Text mit <code>snake_case</code> und __init__ und <del>alt</del>.</p>
+<ul><li>Erster Punkt der Liste hier lang genug.</li><li>Zweiter Punkt der Liste hier auch.</li></ul>
+<table><tr><th>Art</th><th>Preis</th></tr><tr><td>Ziegel</td><td>100 Euro</td></tr></table>
+<p>Am 1. Mai ruht die Arbeit auf allen Baustellen in ganz Deutschland komplett.</p>
+</article></body></html>"""
+    lines = extract_text(html).split("\n")
+    assert lines[0].startswith("# ") and "*" not in lines[0]
+    heading = next(line for line in lines if line.startswith("## "))
+    assert heading == "## Kosten x in m2"
+    for line in lines:
+        # only the literal footnote star of the text may remain
+        assert "*" not in line.replace("MwSt.*", "")
+        assert "`" not in line and "<sup>" not in line and "\\" not in line and "~~" not in line
+    price = next(line for line in lines if "MwSt" in line)
+    assert "kursiver Text mit snake_case und __init__ und alt." in price and "MwSt.* pro" in price
+    assert "Erster Punkt der Liste hier lang genug." in lines
+    assert "Zweiter Punkt der Liste hier auch." in lines
+    assert not any(line.startswith("- ") for line in lines)
+    assert any(line.startswith("|") and line.count("|") >= 3 and "Ziegel" in line for line in lines)
+    assert any(line.startswith("Am 1. Mai") for line in lines)

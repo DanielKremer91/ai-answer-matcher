@@ -52,6 +52,12 @@ def section_level(text: str) -> Optional[int]:
     return min(repeated) if repeated else None
 
 
+def plain_text(doc_or_text) -> str:
+    """The text without heading markers: trimmed lines, empty ones removed, joined with newlines."""
+    text = doc_or_text if isinstance(doc_or_text, str) else doc_or_text.text
+    return "\n".join(strip_heading_marker(line) for line in _lines(text))
+
+
 def _first_h1(lines: list[str]) -> Optional[str]:
     for line in lines:
         if heading_level(line) == 1:
@@ -69,18 +75,20 @@ def split_sections(doc: Document) -> list[Section]:
         text = "\n".join(body)
         return [Section(doc.url, doc.origin, 0, _first_h1(lines) or WHOLE_PAGE_TITLE, 0, text, count_words(text))]
 
-    # blocks: (title, level, body lines); the first block is the introduction
-    blocks: list[tuple[str, int, list[str]]] = [(_first_h1(lines) or INTRO_TITLE, 0, [])]
+    # blocks: (title, body lines); the first block is the introduction. Only an H1 before the first
+    # section heading names the introduction (and is not part of its text); any other H1 is a plain line.
+    intro_title: Optional[str] = None
+    blocks: list[tuple[str, int, list[str]]] = [(INTRO_TITLE, 0, [])]
     for line in lines:
         current = heading_level(line)
         if current == level:
             blocks.append((strip_heading_marker(line), level, []))
-        elif current == 1:
-            if len(blocks) > 1:  # a further H1 ends the open section and starts its own block
-                blocks.append((strip_heading_marker(line), 1, []))
-            # the first H1 is the title of the introduction and not part of its text
+        elif current == 1 and len(blocks) == 1 and intro_title is None:
+            intro_title = strip_heading_marker(line)
         else:
             blocks[-1][2].append(strip_heading_marker(line))
+    if intro_title:
+        blocks[0] = (intro_title, 0, blocks[0][2])
 
     sections: list[Section] = []
     for title, block_level, body in blocks:

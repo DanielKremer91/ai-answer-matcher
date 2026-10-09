@@ -364,3 +364,12 @@ def test_rematch_keeps_the_whole_page_vectors():
     again = rematch(result, covered_delta=0.1, weak_delta=0.2)
     assert again.page_vectors is result.page_vectors
     assert [p.page_score for p in again.match.pages] == [p.page_score for p in result.match.pages]
+
+
+def test_page_texts_carry_no_heading_markers():
+    own = Document("https://me.de/k", "## Kosten\nDie Sanierung kostet 100 Euro pro Quadratmeter und hängt vom Material ab.", OWN)
+    src = Document("https://x.de/k", "# Titel\n### Tief\nText der Quelle steht hier im Detail.", SOURCE)
+    prepared = prepare(KEYWORD, ANSWER, own_docs=[own], source_docs=[src])
+    assert "#" not in prepared.page_texts[(OWN, own.url)]
+    assert prepared.page_texts[(OWN, own.url)].startswith("Kosten\nDie Sanierung")
+    assert prepared.page_texts[(SOURCE, src.url)] == "Titel\nTief\nText der Quelle steht hier im Detail."

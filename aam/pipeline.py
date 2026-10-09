@@ -15,6 +15,7 @@ from aam.ingest.chunks_file import check_dimension
 from aam.ingest.urls import url_key
 from aam.match import match
 from aam.models import OWN, SOURCE, Chunk, ChunkStats, Document, FailedUrl, Result, RunMeta, SegmentedAnswer
+from aam.sections import plain_text
 from aam.segment import Embed, segment_answer
 
 MAX_TARGET_DEVIATION = 0.5
@@ -101,9 +102,9 @@ def prepare(keyword: str, answer_text: str, *, own_docs: Sequence[Document] = ()
     if benchmarks:
         source_chunks, source_stats = chunk_documents(benchmarks, source_target, merge_short=merge_short,
                                                       split_long=split_long)
-    page_texts = {(SOURCE, d.url): d.text for d in benchmarks if d.text.strip()}
+    page_texts = {(SOURCE, d.url): plain_text(d) for d in benchmarks if d.text.strip()}
     if own_chunks is None:
-        page_texts.update({(OWN, d.url): d.text for d in own_docs if d.text.strip()})
+        page_texts.update({(OWN, d.url): plain_text(d) for d in own_docs if d.text.strip()})
     return Prepared(answer, chunks, source_chunks, own_stats, source_stats, tuple(failed), tuple(warnings),
                     own_chunks is not None, source_target, page_texts)
 
