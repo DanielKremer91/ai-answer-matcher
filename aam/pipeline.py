@@ -59,7 +59,8 @@ def combine_documents(table_docs: Sequence[Document], fetched_docs: Sequence[Doc
 def prepare(keyword: str, answer_text: str, *, own_docs: Sequence[Document] = (),
             source_docs: Sequence[Document] = (), own_chunks: Optional[Sequence[Chunk]] = None,
             stored_target: Optional[int] = None, failed: Sequence[FailedUrl] = (),
-            target_override: Optional[int] = None, embed: Optional[Embed] = None) -> Prepared:
+            target_override: Optional[int] = None, embed: Optional[Embed] = None,
+            merge_short: bool = True, split_long: bool = True) -> Prepared:
     if not keyword.strip():
         raise ValueError("Bitte ein Keyword oder einen Prompt eintragen.")
     if not answer_text.strip():
@@ -78,7 +79,8 @@ def prepare(keyword: str, answer_text: str, *, own_docs: Sequence[Document] = ()
                 f"Die hochgeladenen Chunks wurden mit Zielgröße {stored_target} Wörter geschnitten, "
                 f"die aktuelle AI-Antwort ergibt {target}. Die Scores sind dadurch nur eingeschränkt vergleichbar.")
     else:
-        chunks, own_stats = chunk_documents(own_docs, answer.target_words)
+        chunks, own_stats = chunk_documents(own_docs, answer.target_words, merge_short=merge_short,
+                                            split_long=split_long)
     if not chunks:
         raise ValueError("Kein eigener Content mit Text vorhanden. Bitte Export oder URL-Liste prüfen.")
     own_keys = {url_key(d.url) for d in own_docs} if own_chunks is None else {url_key(c.url) for c in chunks}
@@ -95,7 +97,8 @@ def prepare(keyword: str, answer_text: str, *, own_docs: Sequence[Document] = ()
     source_chunks: list[Chunk] = []
     source_stats = None
     if benchmarks:
-        source_chunks, source_stats = chunk_documents(benchmarks, source_target)
+        source_chunks, source_stats = chunk_documents(benchmarks, source_target, merge_short=merge_short,
+                                                      split_long=split_long)
     return Prepared(answer, chunks, source_chunks, own_stats, source_stats, tuple(failed), tuple(warnings),
                     own_chunks is not None, source_target)
 

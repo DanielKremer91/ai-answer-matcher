@@ -104,7 +104,7 @@ Eine Funktion für eigenen Content und Quellen:
 3. Absätze unter der Hälfte der Zielgröße mit dem folgenden Absatz zusammenlegen, solange das Ergebnis das Doppelte der Zielgröße nicht überschreitet. Der letzte Absatz eines Dokuments wird mit dem vorigen zusammengelegt.
 4. Dokumente ohne Text liefern keine Chunks und erscheinen im Protokoll.
 
-`ChunkStats` zählt Dokumente, Chunks, zusammengelegte und geteilte Absätze und die Verteilung der Wortzahl.
+`ChunkStats` zählt Dokumente, Chunks, zusammengelegte und geteilte Absätze und die Verteilung der Wortzahl. Zusammenlegen und Teilen sind einzeln abschaltbar (Seitenleiste); die Einstellung steht im Protokoll, und Schritt 3 listet die geteilten Absätze mit Wortzahl und Fensterzahl auf.
 
 **Seitenvektor.** Längengewichteter Mittelwert der Chunk-Vektoren einer URL (Gewicht = Wortzahl), danach normalisiert. Der Antwortvektor entsteht genauso aus den Aussagen-Vektoren. Dadurch gibt es keine Token-Limit-Probleme und keine zusätzlichen Embedding-Aufrufe.
 

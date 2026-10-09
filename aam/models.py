@@ -73,6 +73,9 @@ class ChunkStats:
     merged: int
     split: int
     empty_urls: tuple[str, ...] = ()
+    split_examples: tuple = ()  # (url, words, windows) of split paragraphs, at most MAX_SPLIT_EXAMPLES
+    merge_short: bool = True  # settings the chunks were produced with
+    split_long: bool = True
 
 
 @dataclass(frozen=True)

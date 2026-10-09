@@ -78,6 +78,8 @@ ollama pull bge-m3
 3. **Chunking prüfen:** Das Tool zeigt, wie es die AI-Antwort in Themen und Aussagen zerlegt hat, welche Chunk-Größe daraus folgt und wie viele Chunks aus deinem Content entstanden sind. Bis hierhin entstehen keine Embedding-Kosten, außer die Antwort hat keine erkennbare Struktur: dann werden ihre Sätze schon hier eingebettet, um Themengrenzen zu finden.
 4. **Analysieren:** Embeddings werden erstellt, danach erscheinen Zusammenfassung, vier Tabellen und die Downloads.
 
+Zwei Schalter in der Seitenleiste bestimmen, wie dein Content geschnitten wird. **Kurze Absätze zusammenlegen** verbindet Zeilen unter der halben Zielgröße, etwa Überschriften, mit dem folgenden Absatz. **Lange Absätze teilen** schneidet Absätze über der doppelten Zielgröße an Satzgrenzen in Fenster, die einzeln eingebettet werden; das beste Fenster zählt. Beides ist standardmäßig an. Schaltest du das Teilen ab, bleibt ein langer Absatz ein Vektor, und eine einzelne Aussage darin geht im Durchschnitt unter: In einem Test lag der Kosinus-Wert eines wörtlich enthaltenen Satzes bei 0,80 in einem 36-Wörter-Absatz, bei 0,56 in einem 291-Wörter-Absatz und bei 0,48 in einem Absatz ohne den Satz. Schritt 3 listet alle geteilten Absätze auf.
+
 Zum Ausprobieren liegen Beispieldateien in `examples/`.
 
 ## Screaming-Frog-Export erstellen

@@ -289,3 +289,14 @@ def test_statement_pages_matrix_is_skipped_for_many_pages():
     from aam.report import statement_pages_matrix
 
     assert statement_pages_matrix(sample_result(), max_pages=2) is None
+
+
+def test_protocol_line_names_switched_off_chunking_steps():
+    from aam.chunk import chunk_documents
+    from aam.models import OWN, Document
+
+    _, stats = chunk_documents([Document("u", "Ein kurzer Absatz.\nNoch ein kurzer Absatz.", OWN)], 20,
+                               merge_short=False, split_long=False)
+    result = sample_result()
+    line = protocol_lines(result.answer, stats, None, [])[1]
+    assert line.endswith("kurze Absätze nicht zusammengelegt, lange Absätze nicht geteilt")

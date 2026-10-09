@@ -309,3 +309,10 @@ def test_source_target_equals_the_answer_target_without_a_reused_export():
     assert prepare(KEYWORD, ANSWER, own_docs=OWN_DOCS, target_override=60).source_target_words == 60
     result = sample_result()
     assert result.meta.source_target_words == 15
+
+
+def test_prepare_passes_the_chunking_switches_through():
+    prepared = prepare(KEYWORD, ANSWER, own_docs=OWN_DOCS, source_docs=SOURCE_DOCS, merge_short=False, split_long=False)
+    assert prepared.own_stats.merged == 0 and prepared.own_stats.chunks == 5
+    assert (prepared.own_stats.merge_short, prepared.own_stats.split_long) == (False, False)
+    assert (prepared.source_stats.merge_short, prepared.source_stats.split_long) == (False, False)

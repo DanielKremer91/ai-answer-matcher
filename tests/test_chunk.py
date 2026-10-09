@@ -161,3 +161,26 @@ def test_stats_for_without_chunks():
 def test_stats_for_existing_chunks():
     chunks = [Chunk("u", OWN, 0, "a b", 2), Chunk("u", OWN, 1, "a b c d", 4)]
     assert stats_for(chunks, documents=1).median_words == 3.0
+
+
+def test_splitting_can_be_switched_off():
+    paragraph = " ".join(sentence(i) for i in range(1, 6))  # 60 words, target 20
+    chunks, merged, split = chunk_document(doc(paragraph), 20, split_long=False)
+    assert [c.words for c in chunks] == [60] and (merged, split) == (0, 0)
+
+
+def test_merging_can_be_switched_off():
+    text = "\n".join(["Kosten der Dachsanierung im Überblick", sentence(1, 22), sentence(2, 3)])
+    chunks, merged, split = chunk_document(doc(text), 20, merge_short=False)
+    assert [c.words for c in chunks] == [5, 22, 3] and (merged, split) == (0, 0)
+
+
+def test_stats_list_the_split_paragraphs_and_the_settings():
+    long_paragraph = " ".join(sentence(i) for i in range(1, 6))
+    docs = [doc(long_paragraph, "https://me.de/lang"), doc(sentence(9, 20), "https://me.de/kurz")]
+    _, stats = chunk_documents(docs, 20)
+    assert stats.split_examples == (("https://me.de/lang", 60, 3),)
+    assert (stats.merge_short, stats.split_long) == (True, True)
+    _, stats = chunk_documents(docs, 20, split_long=False, merge_short=False)
+    assert stats.split_examples == () and stats.split == 0
+    assert (stats.merge_short, stats.split_long) == (False, False)

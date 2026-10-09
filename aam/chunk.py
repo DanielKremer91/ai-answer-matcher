@@ -49,20 +49,26 @@ def _windows(paragraph: str, target_words: int) -> list[str]:
     return windows
 
 
-def chunk_document(doc: Document, target_words: int) -> tuple[list[Chunk], int, int]:
-    """Return (chunks, merged paragraphs, split paragraphs) for one document."""
+MAX_SPLIT_EXAMPLES = 20
+
+
+def _chunk_document(doc: Document, target_words: int, *, merge_short: bool, split_long: bool
+                    ) -> tuple[list[Chunk], int, int, list[tuple[str, int, int]]]:
     limit = 2 * target_words
     half = target_words / 2
     pieces: list[tuple[str, bool]] = []  # (text, is a continuation window of a split paragraph)
     split = 0
+    examples: list[tuple[str, int, int]] = []
     for line in doc.text.split("\n"):
         paragraph = normalize_space(line)
         if not paragraph:
             continue
-        if count_words(paragraph) > limit:
+        words = count_words(paragraph)
+        if split_long and words > limit:
             windows = _windows(paragraph, target_words)
             if len(windows) > 1:
                 split += 1
+                examples.append((doc.url, words, len(windows)))
             pieces.extend((w, i > 0) for i, w in enumerate(windows))
         else:
             pieces.append((paragraph, False))
@@ -71,41 +77,62 @@ def chunk_document(doc: Document, target_words: int) -> tuple[list[Chunk], int, 
     continuation: list[bool] = []  # flag of the first piece of each text
     merged = 0
     for piece, is_continuation in pieces:
-        if (texts and not is_continuation and count_words(texts[-1]) < half
+        if (merge_short and texts and not is_continuation and count_words(texts[-1]) < half
                 and count_words(texts[-1]) + count_words(piece) <= limit):
             texts[-1] = f"{texts[-1]} {piece}"
             merged += 1
         else:
             texts.append(piece)
             continuation.append(is_continuation)
-    if (len(texts) >= 2 and not continuation[-1] and count_words(texts[-1]) < half
+    if (merge_short and len(texts) >= 2 and not continuation[-1] and count_words(texts[-1]) < half
             and count_words(texts[-2]) + count_words(texts[-1]) <= limit):
         tail = texts.pop()
         texts[-1] = f"{texts[-1]} {tail}"
         merged += 1
 
     chunks = [Chunk(doc.url, doc.origin, i, text, count_words(text)) for i, text in enumerate(texts)]
+    return chunks, merged, split, examples
+
+
+def chunk_document(doc: Document, target_words: int, *, merge_short: bool = True,
+                   split_long: bool = True) -> tuple[list[Chunk], int, int]:
+    """Return (chunks, merged paragraphs, split paragraphs) for one document.
+
+    `merge_short` joins paragraphs below half the target with their neighbour; `split_long` cuts
+    paragraphs above twice the target into sentence windows. Both can be switched off, then the
+    paragraphs of the page are used as they are.
+    """
+    chunks, merged, split, _ = _chunk_document(doc, target_words, merge_short=merge_short, split_long=split_long)
     return chunks, merged, split
 
 
 def stats_for(chunks: Sequence[Chunk], *, documents: int, merged: int = 0, split: int = 0,
-              empty_urls: Sequence[str] = ()) -> ChunkStats:
+              empty_urls: Sequence[str] = (), split_examples: Sequence[tuple[str, int, int]] = (),
+              merge_short: bool = True, split_long: bool = True) -> ChunkStats:
     words = [c.words for c in chunks]
     if not words:
-        return ChunkStats(documents, 0, 0.0, 0.0, 0.0, merged, split, tuple(empty_urls))
+        return ChunkStats(documents, 0, 0.0, 0.0, 0.0, merged, split, tuple(empty_urls),
+                          tuple(split_examples), merge_short, split_long)
     p10, median, p90 = (float(v) for v in np.percentile(words, [10, 50, 90]))
-    return ChunkStats(documents, len(words), median, p10, p90, merged, split, tuple(empty_urls))
+    return ChunkStats(documents, len(words), median, p10, p90, merged, split, tuple(empty_urls),
+                      tuple(split_examples), merge_short, split_long)
 
 
-def chunk_documents(docs: Sequence[Document], target_words: int) -> tuple[list[Chunk], ChunkStats]:
+def chunk_documents(docs: Sequence[Document], target_words: int, *, merge_short: bool = True,
+                    split_long: bool = True) -> tuple[list[Chunk], ChunkStats]:
     chunks: list[Chunk] = []
     merged = split = 0
     empty: list[str] = []
+    examples: list[tuple[str, int, int]] = []
     for doc in docs:
-        doc_chunks, doc_merged, doc_split = chunk_document(doc, target_words)
+        doc_chunks, doc_merged, doc_split, doc_examples = _chunk_document(
+            doc, target_words, merge_short=merge_short, split_long=split_long)
         if not doc_chunks:
             empty.append(doc.url)
         chunks.extend(doc_chunks)
         merged += doc_merged
         split += doc_split
-    return chunks, stats_for(chunks, documents=len(docs), merged=merged, split=split, empty_urls=empty)
+        examples.extend(doc_examples)
+    return chunks, stats_for(chunks, documents=len(docs), merged=merged, split=split, empty_urls=empty,
+                             split_examples=examples[:MAX_SPLIT_EXAMPLES], merge_short=merge_short,
+                             split_long=split_long)

@@ -383,3 +383,14 @@ def test_own_content_can_be_pasted_as_text(backend):
     pages = at.session_state["result"].match.pages
     assert [p.url for p in pages] == ["Eingefügter Text"]
     assert backend.fetched == []
+
+
+def test_chunking_switches_in_the_sidebar_reach_the_protocol():
+    at = start()
+    at.sidebar.checkbox(key="split_long").set_value(False)
+    at.sidebar.checkbox(key="merge_short").set_value(False).run()
+    button(at, CHUNK_BUTTON).click()
+    at.run()
+    assert not at.exception and not at.error
+    assert "lange Absätze nicht geteilt" in at.code[0].value
+    assert "Eigener Content: 2 Seiten → 5 Chunks" in at.code[0].value

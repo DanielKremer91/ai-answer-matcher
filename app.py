@@ -57,6 +57,15 @@ with st.sidebar:
     target_override = st.number_input(
         "Chunk-Zielgröße in Wörtern (0 = aus der AI-Antwort ableiten)",
         min_value=0, max_value=300, value=0, step=1, key="target_override")
+    merge_short = st.checkbox(
+        "Kurze Absätze zusammenlegen", value=True, key="merge_short",
+        help="Absätze unter der halben Zielgröße (z. B. Überschriften) werden mit dem nächsten Absatz "
+             "zu einem Chunk verbunden. Aus: jede Zeile bleibt ein eigener Chunk.")
+    split_long = st.checkbox(
+        "Lange Absätze teilen", value=True, key="split_long",
+        help="Absätze über der doppelten Zielgröße werden an Satzgrenzen in Fenster geteilt, jedes Fenster "
+             "wird einzeln eingebettet, das beste zählt. Aus: lange Absätze bleiben ganz; ihr Vektor ist dann "
+             "ein Durchschnitt über alle Gedanken darin und einzelne Aussagen gehen unter.")
     covered_delta = st.slider(
         "Schwelle „abgedeckt“", 0.0, 0.3, 0.05, 0.01, key="covered_delta",
         help="Der beste eigene Chunk darf höchstens so weit unter dem besten Quell-Chunk liegen.")
@@ -281,7 +290,7 @@ def input_signature() -> tuple:
     """Everything the chunking depends on; a change makes the prepared state stale."""
     return (keyword.strip(), answer_text.strip(), tuple(source_urls), tuple(own_urls), own_text,
             own_parsed["sig"] if own_parsed else None, source_parsed["sig"] if source_parsed else None,
-            int(target_override), provider_name, model)
+            int(target_override), merge_short, split_long, provider_name, model)
 
 
 st.header("3. Chunking prüfen")
@@ -312,6 +321,7 @@ if st.button("Segmentieren und chunken", disabled=not ready, type="primary"):
             failed=failed_own + failed_sources,
             target_override=int(target_override) or None,
             embed=fallback_embed(),
+            merge_short=merge_short, split_long=split_long,
         )
         state["prepared_sig"] = input_signature()
         state.pop("result", None)
@@ -337,6 +347,20 @@ if fresh:
         for chunk in prepared.own_chunks[:3]:
             st.markdown(f"**{chunk.url}** · Chunk {chunk.index} · {chunk.words} Wörter")
             st.write(chunk.text)
+    if prepared.source_chunks:
+        with st.expander("Beispiel-Chunks aus den Quellen"):
+            for chunk in prepared.source_chunks[:3]:
+                st.markdown(f"**{chunk.url}** · Chunk {chunk.index} · {chunk.words} Wörter")
+                st.write(chunk.text)
+    split_examples = list(prepared.own_stats.split_examples) + (
+        list(prepared.source_stats.split_examples) if prepared.source_stats else [])
+    if split_examples:
+        with st.expander(f"Geteilte Absätze ({prepared.own_stats.split + (prepared.source_stats.split if prepared.source_stats else 0)})"):
+            st.caption("Diese Absätze waren länger als die doppelte Zielgröße und wurden an Satzgrenzen in "
+                       "Fenster geteilt. Jedes Fenster wird einzeln eingebettet, das beste zählt. "
+                       "Abschaltbar in der Seitenleiste.")
+            for url, words, windows in split_examples:
+                st.markdown(f"- {url} · {words} Wörter → {windows} Fenster")
     st.caption(f"Im nächsten Schritt werden bis zu {prepared.texts_to_embed} Texte eingebettet.")
 
 st.header("4. Analysieren")
