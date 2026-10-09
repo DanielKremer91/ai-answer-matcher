@@ -82,6 +82,18 @@ Zwei Schalter in der Seitenleiste bestimmen, wie dein Content geschnitten wird. 
 
 Zum Ausprobieren liegen Beispieldateien in `examples/`.
 
+## Drei Modi
+
+Ganz oben wählst du den Modus. Anbieter, Modell und API-Key in der Seitenleiste gelten für alle drei. Die Chunking-Schalter und die Schwellen gibt es nur im ersten Modus. Jeder Modus hat seine eigenen Eingaben, ein Wechsel setzt nichts zurück (nur hochgeladene Dateien musst du nach dem Wechsel erneut auswählen).
+
+**AI-Antwort gegen Content.** Der oben beschriebene Ablauf: eine AI-Antwort gegen deine Domain, Chunk gegen Chunk.
+
+**Absatz gegen Text.** Für den schnellen Einzelfall: Du fügst eine Aussage oder einen Absatz der AI-Antwort und deinen Text ein und klickst auf „Vergleichen“. Ist dein Text höchstens viermal so lang wie die Aussage, gilt ein Kosinus-Wert zwischen den beiden ganzen Texten. Ist er länger, schneidet das Tool ihn in Fenster von der Länge der Aussage (und in doppelt so lange) und zeigt zwei Werte: den **Ganztext-Wert**, den die Länge nach unten zieht, und das **beste Fenster** mit seinem Text. Der Fensterwert zeigt, ob die Aussage an einer Stelle vorkommt.
+
+**Content-Gap zwischen Seiten.** Du gibst eine oder mehrere Wettbewerber-Seiten und deinen eigenen Content an (URLs, Frog-Export oder bei deinem Content eingefügter Text). Das Tool schneidet jede Seite an ihren Überschriften in Abschnitte und sucht zu jedem Abschnitt des Wettbewerbers den ähnlichsten Abschnitt deines Contents. Die Tabelle ist nach Kosinus absteigend sortiert. Die Zeilen am Ende sind die Kandidaten für Lücken; das Tool schreibt kein „fehlt“ hinein, die Wertung bleibt bei dir. Dazu gibt es den Ganztext-Wert Seite gegen Seite, ein Protokoll, die Texte beider Abschnitte zum Nachlesen und ein Excel mit den Blättern „Abschnitte“ und „Protokoll“. Mit einer optional eingefügten AI-Antwort steht in jeder Zeile zusätzlich die nächste Aussage der Antwort mit ihrem Kosinus.
+
+Für den Gap-Modus braucht der Main Content die Überschriften als Markierung (`## H2`, `### H3`). Das Snippet `examples/screaming-frog-main-content.js` für Screaming Frogs Custom JavaScript liefert genau das: ein Absatz pro Zeile, Überschriften mit `##`. Seiten, die das Tool selbst lädt, bringen ihre Überschriften mit. Ohne Überschriften hat eine Seite nur einen Abschnitt, verglichen wird dann die ganze Seite.
+
 ## Screaming-Frog-Export erstellen
 
 1. In Screaming Frog unter *Configuration → Custom → Custom Extraction* (XPath oder CSS-Selektor) oder *Custom JavaScript* einen Extraktor anlegen, der den Hauptinhalt der Seite liefert, ohne Navigation, Footer und Seitenleisten. Der Extraktor soll jeden Absatz als eigene Zeile ausgeben, denn daran schneidet das Tool die Chunks.
@@ -117,7 +129,6 @@ Mit OpenAI oder Gemini gehen die Texte der AI-Antwort, deines Contents und der Q
 | Tabelle | Inhalt |
 |---|---|
 | Seiten | Ranking aller Seiten (eigene und Quellen) nach Ähnlichkeit zur ganzen AI-Antwort |
-
 | Themen | Bester Chunk deiner Domain pro Themengebiet, im Vergleich zum besten Quell-Chunk |
 | Aussagen | Bester Chunk deiner Domain pro Aussage, mit Abstand zur besten Quelle, der Nähe zum Quell-Chunk (Cosinus der beiden besten Chunks, nur mit Quell-URLs) und Status |
 | Aussage × Seite | Jede Aussage gegen jede Seite: bester Chunk der Seite und Relevanz der Seite als Ganzes |

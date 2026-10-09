@@ -394,3 +394,217 @@ def test_chunking_switches_in_the_sidebar_reach_the_protocol():
     assert not at.exception and not at.error
     assert "lange Absätze nicht geteilt" in at.code[0].value
     assert "Eigener Content: 2 Seiten → 5 Chunks" in at.code[0].value
+
+
+# ---------------------------------------------------------------- modes
+
+MODE_1, MODE_2, MODE_3 = "AI-Antwort gegen Content", "Absatz gegen Text", "Content-Gap zwischen Seiten"
+SHORT_STATEMENT = "Eine Neueindeckung kostet 100 bis 150 Euro pro Quadratmeter."
+LONG_TEXT = "\n".join([
+    "Unser Team stellt sich vor und berät seit vielen Jahren Hausbesitzer in Köln und Umgebung.",
+    "Eine Neueindeckung kostet 100 bis 150 Euro pro Quadratmeter, je nach Ziegel und Aufwand.",
+    "Die Förderung der KfW hängt vom Effizienzhaus-Standard und vom Zeitpunkt des Antrags ab.",
+    "Vor dem Winter sollten Hausbesitzer die Dachrinnen reinigen und lose Ziegel prüfen lassen.",
+    "Bei Fragen erreichen Sie uns telefonisch oder per Formular, wir melden uns am selben Tag.",
+])
+
+
+def set_mode(at: AppTest, mode: str) -> AppTest:
+    at.radio(key="mode").set_value(mode)
+    return at.run()
+
+
+def headed(doc: Document) -> Document:
+    """The sample page with two H2 headings, so that it is cut into two sections."""
+    first, *rest = doc.text.split("\n")
+    return Document(doc.url, f"## Thema Eins\n{first}\n## Thema Zwei\n" + "\n".join(rest), doc.origin)
+
+
+def gap_app(backend, *, answer: str = "") -> AppTest:
+    for doc in OWN_DOCS + SOURCE_DOCS:
+        backend.known[doc.url] = headed(doc)
+    at = set_mode(AppTest.from_file(APP, default_timeout=30).run(), MODE_3)
+    at.text_area(key="gap_competitor_urls").input("https://quelle.de/foerderung")
+    at.text_area(key="gap_own_urls").input("https://me.de/kosten\nhttps://me.de/blog")
+    if answer:
+        at.text_area(key="gap_answer").input(answer)
+    return at.run()
+
+
+def test_mode_radio_offers_three_modes_and_defaults_to_the_first():
+    at = AppTest.from_file(APP, default_timeout=30).run()
+    assert not at.exception
+    assert at.radio(key="mode").options == [MODE_1, MODE_2, MODE_3]
+    assert at.radio(key="mode").value == MODE_1
+    assert at.radio(key="mode").label == "Modus"
+
+
+def test_manual_mode_hides_stage_one_and_shows_the_two_fields():
+    at = set_mode(AppTest.from_file(APP, default_timeout=30).run(), MODE_2)
+    assert not at.exception and not at.error
+    assert not [h for h in at.header if "AI-Antwort" in h.value[0] or h.value[0].isdigit()]
+    assert at.text_area(key="manual_short") is not None and at.text_area(key="manual_long") is not None
+    assert button(at, "Vergleichen").disabled is True
+    assert not [b for b in at.button if b.label == CHUNK_BUTTON]
+    # chunking switches and thresholds belong to mode 1, provider and model stay
+    assert not at.sidebar.slider and not at.sidebar.checkbox and not at.sidebar.number_input
+    assert at.sidebar.selectbox[0].value == "openai"
+
+
+def test_manual_comparison_of_a_statement_and_a_long_text_shows_both_values_and_the_hint():
+    at = set_mode(AppTest.from_file(APP, default_timeout=30).run(), MODE_2)
+    at.text_area(key="manual_short").input(SHORT_STATEMENT)
+    at.text_area(key="manual_long").input(LONG_TEXT)
+    at.run()
+    button(at, "Vergleichen").click()
+    at.run()
+    assert not at.exception and not at.error
+    assert [m.label for m in at.metric] == ["Ganztext", "Bestes Fenster"]
+    whole, best = (float(m.value.replace(",", ".")) for m in at.metric)
+    assert best > whole
+    assert any("Eine Neueindeckung kostet" in t.value for t in at.text)
+    ratio = round(len(LONG_TEXT.split()) / len(SHORT_STATEMENT.split()))
+    assert any(i.value == f"Dein Text ist {ratio}-mal so lang wie die Aussage. Der Ganztext-Wert wird durch die "
+                          "Länge gedrückt; das beste Fenster zeigt, ob die Aussage an einer Stelle vorkommt."
+               for i in at.info)
+
+
+def test_manual_comparison_of_similar_lengths_shows_one_value():
+    at = set_mode(AppTest.from_file(APP, default_timeout=30).run(), MODE_2)
+    at.text_area(key="manual_short").input(SHORT_STATEMENT)
+    at.text_area(key="manual_long").input("Eine Neueindeckung kostet 120 Euro pro Quadratmeter, je nach Ziegel.")
+    at.run()
+    button(at, "Vergleichen").click()
+    at.run()
+    assert not at.exception and not at.error
+    assert [m.label for m in at.metric] == ["Kosinus"]
+    assert any(m.value == "Beide Texte sind ähnlich lang, der Wert gilt direkt." for m in at.markdown)
+    assert not at.info
+
+
+def test_manual_comparison_reports_a_provider_error(monkeypatch):
+    monkeypatch.setattr("aam.embeddings.make_provider",
+                        lambda *a, **k: (_ for _ in ()).throw(EmbeddingError("Kein API-Key.")))
+    at = set_mode(AppTest.from_file(APP, default_timeout=30).run(), MODE_2)
+    at.text_area(key="manual_short").input(SHORT_STATEMENT)
+    at.text_area(key="manual_long").input(LONG_TEXT)
+    at.run()
+    button(at, "Vergleichen").click()
+    at.run()
+    assert not at.exception
+    assert [e.value for e in at.error] == ["Kein API-Key."]
+    assert not at.metric
+
+
+def test_gap_mode_compares_sections_and_offers_the_excel(backend):
+    at = gap_app(backend)
+    button(at, "Abschnitte vergleichen").click()
+    at.run()
+    assert not at.exception and not at.error
+    frame = at.dataframe[0].value
+    assert "Kosinus" in frame.columns and len(frame) == 2
+    assert "Text Wettbewerber" not in frame.columns and "Text eigen" not in frame.columns
+    assert "Nächste AI-Aussage" not in frame.columns
+    assert list(frame["Kosinus"]) == sorted(frame["Kosinus"], reverse=True)
+    assert "https://quelle.de/foerderung" in at.code[0].value and "Abschnittsebene H2" in at.code[0].value
+    assert any("Kandidaten für Lücken" in m.value or "Kandidat für eine Lücke" in m.value
+               or "alle 2 Abschnitte" in m.value for m in at.markdown)
+    assert any(e.label == "Texte nachlesen" for e in at.expander)
+    assert [b.key for b in at.get("download_button")] == ["gap_download"]
+    assert "gap_result" in at.session_state
+    assert backend.fetched  # pages came through the patched fetcher
+
+
+def test_gap_mode_with_an_answer_adds_the_next_statement(backend):
+    at = gap_app(backend, answer=ANSWER)
+    button(at, "Abschnitte vergleichen").click()
+    at.run()
+    assert not at.exception and not at.error
+    frame = at.dataframe[0].value
+    assert "Nächste AI-Aussage" in frame.columns and "Kosinus AI-Aussage" in frame.columns
+
+
+def test_gap_mode_reads_competitor_and_own_pages_from_uploads(backend):
+    at = set_mode(AppTest.from_file(APP, default_timeout=30).run(), MODE_3)
+    at.file_uploader(key="gap_competitor_upload").set_value(
+        ("wettbewerb.csv", table_csv([headed(d) for d in SOURCE_DOCS]), "text/csv"))
+    at.file_uploader(key="gap_own_upload").set_value(
+        ("frog.csv", table_csv([headed(d) for d in OWN_DOCS]), "text/csv"))
+    at.run()
+    button(at, "Abschnitte vergleichen").click()
+    at.run()
+    assert not at.exception and not at.error
+    assert "Kosinus" in at.dataframe[0].value.columns
+    assert backend.fetched == []
+
+
+def test_gap_mode_accepts_pasted_own_text(backend):
+    backend.known["https://quelle.de/foerderung"] = headed(SOURCE_DOCS[0])
+    at = set_mode(AppTest.from_file(APP, default_timeout=30).run(), MODE_3)
+    at.text_area(key="gap_competitor_urls").input("https://quelle.de/foerderung")
+    at.text_area(key="gap_own_text").input("Die KfW fördert die Dachdämmung mit Krediten.\nDas BAFA zahlt Zuschüsse.")
+    at.run()
+    button(at, "Abschnitte vergleichen").click()
+    at.run()
+    assert not at.exception and not at.error
+    assert set(at.dataframe[0].value["Beste eigene URL"]) == {"Eingefügter Text"}
+
+
+def test_gap_mode_button_needs_competitor_and_own_pages(backend):
+    at = set_mode(AppTest.from_file(APP, default_timeout=30).run(), MODE_3)
+    assert button(at, "Abschnitte vergleichen").disabled is True
+    at.text_area(key="gap_competitor_urls").input("https://quelle.de/foerderung")
+    at.run()
+    assert button(at, "Abschnitte vergleichen").disabled is True
+
+
+def test_gap_mode_names_the_reason_when_no_page_loads(backend):
+    at = set_mode(AppTest.from_file(APP, default_timeout=30).run(), MODE_3)
+    at.text_area(key="gap_competitor_urls").input("https://nirgends.de/a")
+    at.text_area(key="gap_own_urls").input("https://me.de/kosten")
+    at.run()
+    button(at, "Abschnitte vergleichen").click()
+    at.run()
+    assert not at.exception
+    assert len(at.error) == 1 and "https://nirgends.de/a (HTTP 403)" in at.error[0].value
+    assert "gap_result" not in at.session_state
+
+
+def test_gap_result_is_hidden_after_the_inputs_change(backend):
+    at = gap_app(backend)
+    button(at, "Abschnitte vergleichen").click()
+    at.run()
+    assert at.dataframe
+    at.text_area(key="gap_own_urls").input("https://me.de/kosten")
+    at.run()
+    assert not at.dataframe and not at.get("download_button")
+    assert any("Eingaben haben sich" in w.value for w in at.warning)
+
+
+def test_mode_switch_keeps_the_other_modes_inputs_and_results(backend):
+    at = gap_app(backend)
+    button(at, "Abschnitte vergleichen").click()
+    at.run()
+    set_mode(at, MODE_2)
+    assert not at.exception and not at.error and not at.warning and not at.dataframe
+    set_mode(at, MODE_3)
+    assert not at.exception and not at.error and not at.warning
+    assert at.text_area(key="gap_competitor_urls").value == "https://quelle.de/foerderung"
+    assert at.dataframe and at.get("download_button")
+
+
+def test_stage_one_still_runs_after_a_mode_round_trip():
+    at = new_app()
+    set_mode(at, MODE_3)
+    set_mode(at, MODE_1)
+    assert not at.exception and not at.warning
+    assert at.text_input(key="keyword").value == KEYWORD
+    at.file_uploader(key="own_upload").set_value(("frog.csv", table_csv(OWN_DOCS), "text/csv"))
+    at.run()
+    button(at, CHUNK_BUTTON).click()
+    at.run()
+    button(at, ANALYZE_BUTTON).click()
+    at.run()
+    assert not at.exception and not at.error
+    assert at.session_state["result"].match.has_sources is False
+    assert [h.value[0] for h in at.header if h.value[0].isdigit()] == ["1", "2", "3", "4"]
