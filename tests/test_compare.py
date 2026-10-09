@@ -54,11 +54,45 @@ def test_non_windowed_score_is_cosine_of_whole_vectors():
 
 def test_ratio_above_four_is_windowed():
     short = " ".join(f"kurz{i}" for i in range(10))
-    long = " ".join(f"lang{i}" for i in range(41))
+    long = " ".join(sentence(f"lang{i}x", 9) for i in range(5))
     result = compare_texts(short, long, embed, "fake")
     assert result.windowed
     assert result.best_window != ""
     assert result.window_words == count_words(result.best_window)
+
+
+def test_single_window_returns_the_plain_comparison():
+    short = " ".join(f"kurz{i}" for i in range(10))
+    long = " ".join(f"lang{i}" for i in range(41))  # one unpunctuated line: only one window exists
+    result = compare_texts(short, long, embed, "fake")
+    assert not result.windowed
+    assert result.best_window == ""
+    assert result.window_words == 0
+    assert result.score == result.whole_score
+
+
+def test_windows_respect_paragraphs_of_unpunctuated_text():
+    lines = [" ".join(f"z{n}w{i}" for i in range(10)) for n in range(30)]
+    short = lines[17]
+    result = compare_texts(short, "\n".join(lines), wide_embed, "fake")
+    assert result.windowed
+    assert result.best_window in lines
+    assert result.best_window == short
+    assert result.score > result.whole_score
+
+
+def test_fallback_windows_of_text_vector_respect_paragraphs(monkeypatch):
+    monkeypatch.setattr(compare, "fits_whole_text", lambda provider_name, text: False)
+    lines = [" ".join(f"z{n}w{i}" for i in range(10)) for n in range(30)]
+    calls = []
+
+    def recording(texts):
+        calls.append(list(texts))
+        return wide_embed(texts)
+
+    text_vector("\n".join(lines), recording, "fake")
+    assert len(calls[0]) > 1
+    assert all(w in lines for w in calls[0])
 
 
 def test_best_window_contains_the_repeated_sentence():

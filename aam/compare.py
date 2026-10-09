@@ -31,11 +31,26 @@ class Comparison:
     long_words: int
 
 
+def line_windows(text: str, target_words: int) -> list[str]:
+    """Sentence windows per non-empty line, so a window never crosses a paragraph."""
+    windows: list[str] = []
+    for line in text.split("\n"):
+        if line.strip():
+            windows.extend(_windows(line, target_words) or [line.strip()])
+    return windows
+
+
+def long_windows(long_text: str, short_words: int) -> list[str]:
+    """Distinct windows of the longer text in both sizes (the target follows the shorter text)."""
+    target = max(MIN_TARGET, min(MAX_TARGET, short_words))
+    return list(dict.fromkeys(line_windows(long_text, target) + line_windows(long_text, 2 * target)))
+
+
 def _parts(text: str, provider_name: str) -> tuple[list[str], bool]:
     """Texts to embed for the vector of `text`, and whether that is the whole text."""
     if fits_whole_text(provider_name, text):
         return [text], True
-    return _windows(text, FALLBACK_TARGET) or [text], False
+    return line_windows(text, FALLBACK_TARGET) or [text], False
 
 
 def _combine(text: str, whole: bool, parts: list[str], vectors: dict[str, np.ndarray]) -> Optional[np.ndarray]:
@@ -60,10 +75,17 @@ def _embed_all(texts: list[str], embed: Embed) -> dict[str, np.ndarray]:
     return {t: np.asarray(v, dtype=np.float64) for t, v in zip(distinct, vectors) if v is not None}
 
 
+def text_vectors(texts: list[str], embed: Embed, provider_name: str) -> dict[str, Optional[np.ndarray]]:
+    """Normalised vectors of several texts through ONE `embed` call (see `text_vector`)."""
+    distinct = list(dict.fromkeys(texts))
+    plans = {t: _parts(t, provider_name) for t in distinct}
+    vectors = _embed_all([p for parts, _ in plans.values() for p in parts], embed)
+    return {t: _combine(t, whole, parts, vectors) for t, (parts, whole) in plans.items()}
+
+
 def text_vector(text: str, embed: Embed, provider_name: str) -> Optional[np.ndarray]:
     """Normalised vector of the whole text, or the word-weighted mean of its windows when too long."""
-    parts, whole = _parts(text, provider_name)
-    return _combine(text, whole, parts, _embed_all(parts, embed))
+    return text_vectors([text], embed, provider_name)[text]
 
 
 def _cosine(a: np.ndarray, b: np.ndarray) -> float:
@@ -77,14 +99,14 @@ def compare_texts(short: str, long: str, embed: Embed, provider_name: str) -> Co
     if len(short.split()) > len(long.split()):
         short, long = long, short
     short_words, long_words = len(short.split()), len(long.split())
-    windowed = long_words > LENGTH_RATIO * short_words
+    # Only a long text that really yields several windows is compared window by window.
+    windows = long_windows(long, short_words) if long_words > LENGTH_RATIO * short_words else []
+    windowed = len(windows) > 1
+    if not windowed:
+        windows = []
 
     short_parts, short_whole = _parts(short, provider_name)
     long_parts, long_whole = _parts(long, provider_name)
-    windows: list[str] = []
-    if windowed:
-        target = max(MIN_TARGET, min(MAX_TARGET, short_words))
-        windows = list(dict.fromkeys(_windows(long, target) + _windows(long, 2 * target)))
     vectors = _embed_all(short_parts + long_parts + windows, embed)
 
     short_vec = _combine(short, short_whole, short_parts, vectors)
