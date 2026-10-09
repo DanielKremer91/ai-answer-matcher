@@ -113,7 +113,7 @@ def test_protocol_lines_wording_for_two_and_one_sections():
     one_own = page("https://me.de/b", OWN, ("Nur", words("nur", 12)))
     lines = gap_protocol_lines(run(comps=[single], owns=[one_own]))
     assert lines[0].startswith("https://wett.de/b: Abschnittsebene keine, 1 Abschnitt, 6 Wörter, Ganztext-Wert ")
-    assert lines[1] == "Die Seite hat nur einen Abschnitt, verglichen wird die ganze Seite."
+    assert lines[1] == "Die Seite hat nur einen Abschnitt. Verglichen wird die ganze Seite."
     assert lines[2] == "Eigene Seite https://me.de/b: Abschnittsebene H2, 1 Abschnitt"
     assert len(lines) == 3
 
@@ -178,7 +178,7 @@ def test_summary_when_every_section_has_a_counterpart():
 def test_summary_for_a_single_section_page_returns_its_note():
     single = Document("https://wett.de/b", "Erster Absatz über Kosten.\nZweiter Absatz.", SOURCE)
     result = run(comps=[single])
-    assert gap_summary(result) == "Die Seite hat nur einen Abschnitt, verglichen wird die ganze Seite."
+    assert gap_summary(result) == "Die Seite hat nur einen Abschnitt. Verglichen wird die ganze Seite."
 
 
 def test_summary_for_a_single_section_without_note_names_score_and_own_url():

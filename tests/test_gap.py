@@ -7,13 +7,15 @@ from datetime import date
 import numpy as np
 import pytest
 
-from aam.gap import GapPage, GapResult, GapRow, analyze_gap
+from aam.gap import (METHOD_WHOLE, METHOD_WINDOW_COMPETITOR, METHOD_WINDOW_OWN, WINDOW_ALL_UP_TO, GapPage, GapResult,
+                     GapRow, analyze_gap)
 from aam.models import OWN, SOURCE, Document
 from aam.segment import segment_answer
 from aam.sections import plain_text
 from tests.fakes import ANSWER, bow_vector
 
-NOTE = "Die Seite hat nur einen Abschnitt, verglichen wird die ganze Seite."
+ONE_SECTION = "Die Seite hat nur einen Abschnitt."
+NOTE = ONE_SECTION + " Verglichen wird die ganze Seite."
 
 
 class Recorder:
@@ -212,7 +214,7 @@ def long_own(topic: str, n_fill: int = 9) -> str:
 def test_windows_are_built_for_at_most_five_own_sections_per_competitor_section():
     short = sentence("thema", 20)
     comp = page("https://wett.de/a", SOURCE, ("Thema", short))
-    bodies = [long_own(f"fuell{k}n") for k in range(20)]
+    bodies = [long_own(f"fuell{k}n") for k in range(45)]  # above WINDOW_ALL_UP_TO
     own = page("https://me.de/a", OWN, *[(f"Eigen {k}", b) for k, b in enumerate(bodies)])
     recorder = Recorder()
     result = run([comp], [own], embed=recorder)
@@ -254,9 +256,10 @@ def test_cap_does_not_change_a_small_case():
 
 def test_identical_sections_score_exactly_one():
     comp = page("https://wett.de/a", SOURCE, ("Kosten", KOSTEN), ("Förderung", FOERDERUNG))
-    own = page("https://me.de/a", OWN, ("Preise", KOSTEN), ("Zuschüsse", FOERDERUNG))
+    own = page("https://me.de/a", OWN, ("Kosten", KOSTEN), ("Förderung", FOERDERUNG))
     result = run([comp], [own])
-    assert [r.score for r in result.pages[0].rows] == [1.0, 1.0]
+    scores = [r.score for r in result.pages[0].rows]
+    assert scores == pytest.approx([1.0, 1.0]) and max(scores) <= 1.0
     assert result.pages[0].page_score <= 1.0
 
 
@@ -278,7 +281,7 @@ def test_dropped_sections_are_reported():
     assert gap_page.note.startswith("2 Abschnitte konnten nicht eingebettet werden und fehlen.")
 
     def embed_sections_only(texts):  # drops the sections, keeps the page vector
-        return [None if t.startswith(("garantie0", "foerder0")) else bow_vector(t, 512) for t in texts]
+        return [None if t.startswith(("Garantie\n", "Förderung\n")) else bow_vector(t, 512) for t in texts]
 
     gap_page = run([competitor()], [own_page()], embed=embed_sections_only).pages[0]
     assert gap_page.note == "2 Abschnitte konnten nicht eingebettet werden und fehlen."
@@ -313,3 +316,98 @@ def test_missing_page_vector_is_noted():
     assert gap_page.note == "Kein Seitenvektor, Ganztext-Wert nicht verfügbar."
     assert gap_page.best_own_url == "" and gap_page.dropped == 0
     assert len(gap_page.rows) == 3
+
+
+PASSAGE = " ".join(sentence(f"pass{k}x", 12) for k in range(3))  # 36 words, the competitor's passage
+
+
+def long_with_passage(n_paragraphs: int = 20) -> str:
+    """About 400 words in paragraphs of 20 words with the passage copied verbatim into the middle."""
+    paragraphs = [sentence(f"lang{i}x", 20) for i in range(n_paragraphs)]
+    paragraphs.insert(n_paragraphs // 2, PASSAGE)
+    return "\n".join(paragraphs)
+
+
+def related_short_sections(n: int) -> list[tuple[str, str]]:
+    tokens = PASSAGE.lower().replace(".", "").split()
+    return [(f"Verwandt {i}", " ".join(tokens[2 * i:2 * i + 10]) + f" extra{i}") for i in range(n)]
+
+
+def test_long_own_section_with_the_passage_beats_six_related_short_sections():
+    comp = page("https://wett.de/a", SOURCE, ("Thema", PASSAGE))
+    own = page("https://me.de/a", OWN, ("Thema", long_with_passage()), *related_short_sections(6))
+    (row,) = run([comp], [own]).pages[0].rows
+    assert row.own.title == "Thema" and row.own.words > 400
+    assert row.windowed and row.best_window == PASSAGE
+    assert row.score > 0.95
+
+
+def test_above_the_all_pairs_limit_the_long_section_is_found_through_the_length_ratio_candidates():
+    comp = page("https://wett.de/a", SOURCE, ("Thema", PASSAGE))
+    fremd = [(f"Fremd {k}", words(f"fremd{k}x", 12)) for k in range(40)]
+    own = page("https://me.de/a", OWN, ("Thema", long_with_passage()), *related_short_sections(6), *fremd)
+    recorder = Recorder()
+    (row,) = run([comp], [own], embed=recorder).pages[0].rows
+    assert WINDOW_ALL_UP_TO == 40
+    assert row.own.title == "Thema" and row.windowed and row.best_window == PASSAGE
+    assert row.score > 0.95
+    assert len(recorder.calls) == 2
+
+
+def test_up_to_forty_own_sections_every_pair_above_the_ratio_gets_windows():
+    comp = page("https://wett.de/a", SOURCE, ("Thema", sentence("thema", 20)))
+    bodies = [long_own(f"fuell{k}n") for k in range(WINDOW_ALL_UP_TO)]
+    own = page("https://me.de/a", OWN, *[(f"Eigen {k}", b) for k, b in enumerate(bodies)])
+    recorder = Recorder()
+    run([comp], [own], embed=recorder)
+    touched = {k for k, b in enumerate(bodies) if any(w in b for w in recorder.calls[1])}
+    assert touched == set(range(WINDOW_ALL_UP_TO))
+
+
+def test_the_section_title_is_part_of_the_embedded_text():
+    question = "Wie lange dauert die Sanierung eines Daches im Altbau"
+    comp = page("https://wett.de/a", SOURCE, (question, "Etwa zwei Wochen."), ("Garantie", GARANTIE))
+    own = page("https://me.de/a", OWN, (question, "Das hängt vom Gerüst ab."), ("Anderes", words("anders", 12)))
+    rows = {r.competitor.title: r for r in run([comp], [own]).pages[0].rows}
+    assert rows[question].own.title == question
+    assert rows[question].score > 0.6
+    assert rows[question].score > rows["Garantie"].score
+
+
+def test_methods_name_where_the_score_comes_from():
+    comp = page("https://wett.de/a", SOURCE, ("Kosten", KOSTEN), ("Thema", PASSAGE))
+    own = page("https://me.de/a", OWN, ("Kosten", KOSTEN), ("Lang", long_with_passage()))
+    rows = {r.competitor.title: r for r in run([comp], [own]).pages[0].rows}
+    assert rows["Kosten"].method == METHOD_WHOLE and not rows["Kosten"].windowed
+    assert rows["Thema"].method == METHOD_WINDOW_OWN == "Fenster aus eigenem Abschnitt"
+    assert METHOD_WHOLE == "Ganztext"
+
+    long_comp = page("https://wett.de/a", SOURCE, ("Lang", long_with_passage()))
+    own = page("https://me.de/a", OWN, ("Thema", PASSAGE), ("Garantie", GARANTIE))
+    (row,) = run([long_comp], [own]).pages[0].rows
+    assert row.windowed and row.best_window == PASSAGE
+    assert row.method == METHOD_WINDOW_COMPETITOR == "Fenster aus Wettbewerber-Abschnitt"
+
+
+def test_windowed_pair_scores_the_better_of_whole_and_window():
+    # The short text's words are spread over five paragraphs of the long one: no window holds them all,
+    # so the whole-text cosine wins although the pair is above the length ratio.
+    shared = [f"streu{i}" for i in range(10)]
+    short = " ".join(shared)
+    paragraphs = [" ".join(shared[2 * i:2 * i + 2] + [f"fuell{i}x{j}" for j in range(7)]) + "." for i in range(5)]
+    long_text = "\n".join(paragraphs)  # 45 words against 10: ratio 4.5
+    comp = page("https://wett.de/a", SOURCE, ("Kurz", short))
+    own = page("https://me.de/a", OWN, ("Lang", long_text))
+    (row,) = run([comp], [own]).pages[0].rows
+    a, b = bow_vector(f"Kurz\n{short}", 512), bow_vector(f"Lang\n{long_text}", 512)
+    whole = float(a @ b / (np.linalg.norm(a) * np.linalg.norm(b)))
+    assert row.score == pytest.approx(whole, abs=1e-5)
+    assert row.score > 0.4
+    assert not row.windowed and row.best_window == "" and row.method == METHOD_WHOLE
+
+
+def test_single_section_note_also_fires_for_a_page_with_one_heading_section():
+    comp = page("https://wett.de/a", SOURCE, ("Nur eine", KOSTEN))
+    (gap_page,) = run([comp], [own_page()]).pages
+    assert gap_page.level == 2 and gap_page.sections == 1
+    assert gap_page.note == ONE_SECTION
