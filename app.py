@@ -15,7 +15,9 @@ from aam.envfile import load_env_file
 from aam.ingest import chunks_file, content
 from aam.ingest.tables import describe_table_info, read_table_info
 from aam.ingest.urls import parse_urls, url_key
-from aam.models import OWN, SOURCE
+from aam.models import OWN, SOURCE, Document
+
+PASTED_URL = "Eingefügter Text"  # stands in for the URL of pasted own content
 
 UPLOAD_TYPES = ["csv", "tsv", "txt", "xlsx", "xlsm"]
 KEY_ENV = {"openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
@@ -243,9 +245,10 @@ with st.expander("Was passiert in diesem Schritt?"):
         "Dein Content wird in **Chunks** geschnitten, also in Absätze von etwa der Länge einer Aussage der "
         "AI-Antwort. Grenzen liegen an Absätzen und Sätzen, nie mitten im Satz. Deshalb braucht das Tool den "
         "Main Content mit Zeilenumbrüchen, am besten aus einem Screaming-Frog-Export.\n\n"
-        "Drei Wege: ein **Frog-Export** mit URL- und Content-Spalte (ganze Domain oder Teilbereich), eine "
-        "**URL-Liste** für eine Handvoll Seiten, die das Tool selbst lädt, oder ein **Chunk-Embedding-Export** "
-        "aus einem früheren Lauf, damit die Domain nicht noch einmal eingebettet werden muss.\n\n"
+        "Vier Wege: ein **Frog-Export** mit URL- und Content-Spalte (ganze Domain oder Teilbereich), eine "
+        "**URL-Liste** für eine Handvoll Seiten, die das Tool selbst lädt, ein **Chunk-Embedding-Export** "
+        "aus einem früheren Lauf, damit die Domain nicht noch einmal eingebettet werden muss, oder für einen "
+        "schnellen Test der **eingefügte Text** einer Seite.\n\n"
         "Optional kannst du den Content der Quell-URLs als Datei im selben Format hochladen, falls sich die "
         "Seiten nicht laden lassen oder du dieselbe Extraktion wie für deinen Content willst.")
 own_file = st.file_uploader(
@@ -255,6 +258,11 @@ own_parsed = parse_upload(own_file, OWN, "own_parsed")
 show_upload_note(own_parsed)
 own_urls = parse_urls(st.text_area(
     "Eigene URLs (optional, eine pro Zeile). Das Tool lädt den Content selbst.", key="own_urls", height=110))
+own_text = st.text_area(
+    "Eigenen Content als Text einfügen (optional, ein Absatz pro Zeile)", key="own_text", height=160,
+    help="Für einen schnellen Test ohne Export: den Main Content einer Seite hier einfügen. "
+         "Er erscheint in den Ergebnissen als „Eingefügter Text“.").strip()
+pasted_docs = [Document(PASTED_URL, own_text, OWN)] if own_text else []
 source_file = st.file_uploader(
     "Optional: Content der Quell-URLs als Datei (gleiches Format wie der Frog-Export)",
     type=UPLOAD_TYPES, key="source_upload")
@@ -262,16 +270,16 @@ source_parsed = parse_upload(source_file, SOURCE, "source_parsed")
 show_upload_note(source_parsed)
 
 prechunked = bool(own_parsed and own_parsed["chunks"] is not None)
-if prechunked and own_urls:
-    st.info("Mit einem Chunk-Embedding-Export werden die eigenen URLs nicht zusätzlich geladen.")
+if prechunked and (own_urls or pasted_docs):
+    st.info("Mit einem Chunk-Embedding-Export werden eigene URLs und eingefügter Text nicht zusätzlich verwendet.")
 upload_error = any(p is not None and p["error"] for p in (own_parsed, source_parsed))
-has_own = prechunked or bool(own_parsed and own_parsed["docs"]) or bool(own_urls)
+has_own = prechunked or bool(own_parsed and own_parsed["docs"]) or bool(own_urls) or bool(pasted_docs)
 ready = bool(keyword.strip() and answer_text.strip() and has_own and not upload_error)
 
 
 def input_signature() -> tuple:
     """Everything the chunking depends on; a change makes the prepared state stale."""
-    return (keyword.strip(), answer_text.strip(), tuple(source_urls), tuple(own_urls),
+    return (keyword.strip(), answer_text.strip(), tuple(source_urls), tuple(own_urls), own_text,
             own_parsed["sig"] if own_parsed else None, source_parsed["sig"] if source_parsed else None,
             int(target_override), provider_name, model)
 
@@ -289,7 +297,7 @@ if not ready:
 if st.button("Segmentieren und chunken", disabled=not ready, type="primary"):
     failed_own: list = []
     try:
-        table_own = own_parsed["docs"] if own_parsed else []
+        table_own = (own_parsed["docs"] if own_parsed else []) + pasted_docs
         fetched_own, failed_own = ([], []) if prechunked else fetch_missing(
             own_urls, OWN, {url_key(d.url) for d in table_own})
         table_sources = source_parsed["docs"] if source_parsed else []

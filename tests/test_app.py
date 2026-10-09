@@ -366,3 +366,20 @@ def test_result_has_a_statement_by_page_tab_with_matrix_and_list():
     frames = [d.value for d in at.dataframe]
     assert any("Seiten-Relevanz" in f.columns and "Bester Chunk Score" in f.columns for f in frames)
     assert any(list(f.columns[:2]) == ["Thema", "Aussage"] and "https://me.de/kosten" in f.columns for f in frames)
+
+
+def test_own_content_can_be_pasted_as_text(backend):
+    at = new_app()
+    at.text_area(key="own_text").input(OWN_DOCS[0].text)
+    at.run()
+    assert button(at, CHUNK_BUTTON).disabled is False
+    button(at, CHUNK_BUTTON).click()
+    at.run()
+    assert not at.exception and not at.error
+    assert "Eigener Content: 1 Seite" in at.code[0].value
+    button(at, ANALYZE_BUTTON).click()
+    at.run()
+    assert not at.exception and not at.error
+    pages = at.session_state["result"].match.pages
+    assert [p.url for p in pages] == ["Eingefügter Text"]
+    assert backend.fetched == []
