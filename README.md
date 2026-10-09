@@ -84,7 +84,7 @@ Zum Ausprobieren liegen Beispieldateien in `examples/`.
 
 ## Drei Modi
 
-Ganz oben wählst du den Modus. Anbieter, Modell und API-Key in der Seitenleiste gelten für alle drei. Die Chunking-Schalter und die Schwellen gibt es nur im ersten Modus. Jeder Modus hat seine eigenen Eingaben, ein Wechsel setzt nichts zurück (nur hochgeladene Dateien musst du nach dem Wechsel erneut auswählen).
+Ganz oben wählst du den Modus. Anbieter, Modell und API-Key in der Seitenleiste gelten für alle drei. Die Chunking-Schalter und die Schwellen gibt es nur im ersten Modus. Jeder Modus hat seine eigenen Eingaben, ein Wechsel setzt nichts zurück: Texte, Einstellungen, Ergebnisse und hochgeladene Dateien bleiben erhalten. Eine hochgeladene Datei zeigt nach dem Wechsel „Zuletzt geladen: …“ und gilt weiter, bis du eine andere wählst oder sie mit „Datei entfernen“ löschst.
 
 **AI-Antwort gegen Content.** Der oben beschriebene Ablauf: eine AI-Antwort gegen deine Domain, Chunk gegen Chunk.
 
@@ -92,7 +92,7 @@ Ganz oben wählst du den Modus. Anbieter, Modell und API-Key in der Seitenleiste
 
 **Content-Gap zwischen Seiten.** Du gibst eine oder mehrere Wettbewerber-Seiten und deinen eigenen Content an (URLs, Frog-Export oder bei deinem Content eingefügter Text). Das Tool schneidet jede Seite an ihren Überschriften in Abschnitte und sucht zu jedem Abschnitt des Wettbewerbers den ähnlichsten Abschnitt deines Contents. Die Tabelle ist nach Kosinus absteigend sortiert. Die Zeilen am Ende sind die Kandidaten für Lücken; das Tool schreibt kein „fehlt“ hinein, die Wertung bleibt bei dir. Dazu gibt es den Ganztext-Wert Seite gegen Seite, ein Protokoll, die Texte beider Abschnitte zum Nachlesen und ein Excel mit den Blättern „Abschnitte“ und „Protokoll“. Mit einer optional eingefügten AI-Antwort steht in jeder Zeile zusätzlich die nächste Aussage der Antwort mit ihrem Kosinus.
 
-Für den Gap-Modus braucht der Main Content die Überschriften als Markierung (`## H2`, `### H3`). Das Snippet `examples/screaming-frog-main-content.js` für Screaming Frogs Custom JavaScript liefert genau das: ein Absatz pro Zeile, Überschriften mit `##`. Seiten, die das Tool selbst lädt, bringen ihre Überschriften mit. Ohne Überschriften hat eine Seite nur einen Abschnitt, verglichen wird dann die ganze Seite.
+Für den Gap-Modus braucht der Main Content die Überschriften als Markierung (`## H2`, `### H3`). Das Snippet `examples/screaming-frog-main-content.js` für Screaming Frogs Custom JavaScript liefert genau das: ein Absatz pro Zeile, Überschriften mit `##`. Seiten, die das Tool selbst lädt, bringen ihre Überschriften mit. Schon eine einzige H2 teilt die Seite in die Einleitung und diesen Abschnitt. Ohne Überschriften hat eine Seite nur einen Abschnitt, verglichen wird dann die ganze Seite.
 
 ## Screaming-Frog-Export erstellen
 

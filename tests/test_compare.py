@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -128,7 +130,21 @@ def test_larger_window_wins_when_the_match_spans_two_sentences():
 def test_swapped_arguments_give_the_same_result():
     short = sentence("treffer", 15)
     long = " ".join([sentence(f"fuell{i}x", 14) for i in range(3)] + [short])
-    assert compare_texts(short, long, wide_embed, "fake") == compare_texts(long, short, wide_embed, "fake")
+    straight, swapped = compare_texts(short, long, wide_embed, "fake"), compare_texts(long, short, wide_embed, "fake")
+    assert (straight.swapped, swapped.swapped) == (False, True)
+    assert replace(swapped, swapped=False) == straight
+
+
+def test_ratio_is_long_words_over_short_words_and_swapped_tells_the_direction():
+    short = " ".join(f"kurz{i}" for i in range(10))
+    long = " ".join(f"lang{i}" for i in range(25))
+    straight, swapped = compare_texts(short, long, embed, "fake"), compare_texts(long, short, embed, "fake")
+    assert (straight.ratio, straight.swapped) == (2.5, False)
+    assert (swapped.ratio, swapped.swapped) == (2.5, True)
+    assert (swapped.short_words, swapped.long_words) == (10, 25)
+    equal = compare_texts(short, short + " x", embed, "fake")
+    assert (equal.swapped, round(equal.ratio, 1)) == (False, 1.1)
+    assert compare_texts(short, short, embed, "fake").ratio == 1.0
 
 
 @pytest.mark.parametrize("empty", ["", "   \n "])

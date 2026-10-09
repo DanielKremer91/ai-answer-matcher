@@ -23,6 +23,10 @@ UPLOAD_TYPES = ["csv", "tsv", "txt", "xlsx", "xlsm"]
 KEY_ENV = {"openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
 RUN_ERRORS = (ValueError, embeddings.EmbeddingError)
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+GAP_CHUNKS_ERROR = ("Ein Chunk-Embedding-Export enthält keine Überschriften. Lade hier den Frog-Export mit dem "
+                    "Main Content hoch.")
+SOURCE_CHUNKS_ERROR = ("Ein Chunk-Embedding-Export gilt nur für den eigenen Content. Lade hier den Frog-Export "
+                       "mit dem Main Content der Quellen hoch.")
 
 st.set_page_config(page_title="AI Answer Matcher", layout="wide")
 try:
@@ -34,15 +38,31 @@ state.setdefault("cache", MemoryCache())
 state.setdefault("fetched", {})  # (origin, url key) -> Document; fetched pages survive re-chunking
 
 MODE_STAGE1, MODE_MANUAL, MODE_GAP = "AI-Antwort gegen Content", "Absatz gegen Text", "Content-Gap zwischen Seiten"
-# Widgets that only exist in one mode lose their value when another mode runs. Writing the value back into
-# the session on every run keeps it; file uploads cannot be kept this way.
-KEPT_KEYS = ("keyword", "answer", "source_urls", "own_urls", "own_text",
-             "target_override", "merge_short", "split_long", "covered_delta", "weak_delta",
-             "manual_short", "manual_long", "gap_competitor_urls", "gap_own_urls", "gap_own_text",
-             "gap_keyword", "gap_answer")
-for _key in KEPT_KEYS:
-    if _key in state:
-        state[_key] = state[_key]
+# A widget loses its value while another mode runs, because it is not rendered then. Writing a value into the
+# key of a rendered widget logs a Streamlit warning, so the value of every widget is copied under a separate key
+# at the end of each run (`remember_inputs`) and read back as the widget's `value=` when it is rendered again.
+MODE_KEYS = {
+    MODE_STAGE1: ("keyword", "answer", "source_urls", "own_urls", "own_text",
+                  "target_override", "merge_short", "split_long", "covered_delta", "weak_delta"),
+    MODE_MANUAL: ("manual_short", "manual_long"),
+    MODE_GAP: ("gap_competitor_urls", "gap_own_urls", "gap_own_text", "gap_keyword", "gap_answer"),
+}
+COPY_PREFIX = "kept_"
+
+
+def kept(key: str, default):
+    """Value of the widget `key` from its last render in any mode, `default` before the first one."""
+    return state.get(COPY_PREFIX + key, default)
+
+
+def remember_inputs() -> None:
+    """Copy the input values aside; see the comment at MODE_KEYS. A widget that was not rendered in this run
+    still has its value here when it changed in the very run that switched the mode."""
+    for keys in MODE_KEYS.values():
+        for key in keys:
+            if key in state:
+                state[COPY_PREFIX + key] = state[key]
+
 
 st.title("AI Answer Matcher")
 mode = st.radio("Modus", [MODE_STAGE1, MODE_MANUAL, MODE_GAP], key="mode", horizontal=True)
@@ -73,21 +93,21 @@ with st.sidebar:
         st.divider()
         target_override = st.number_input(
             "Chunk-Zielgröße in Wörtern (0 = aus der AI-Antwort ableiten)",
-            min_value=0, max_value=300, value=0, step=1, key="target_override")
+            min_value=0, max_value=300, value=kept("target_override", 0), step=1, key="target_override")
         merge_short = st.checkbox(
-            "Kurze Absätze zusammenlegen", value=True, key="merge_short",
+            "Kurze Absätze zusammenlegen", value=kept("merge_short", True), key="merge_short",
             help="Absätze unter der halben Zielgröße (z. B. Überschriften) werden mit dem nächsten Absatz "
                  "zu einem Chunk verbunden. Aus: jede Zeile bleibt ein eigener Chunk.")
         split_long = st.checkbox(
-            "Lange Absätze teilen", value=True, key="split_long",
+            "Lange Absätze teilen", value=kept("split_long", True), key="split_long",
             help="Absätze über der doppelten Zielgröße werden an Satzgrenzen in Fenster geteilt, jedes Fenster "
                  "wird einzeln eingebettet, das beste zählt. Aus: lange Absätze bleiben ganz; ihr Vektor ist dann "
                  "ein Durchschnitt über alle Gedanken darin und einzelne Aussagen gehen unter.")
         covered_delta = st.slider(
-            "Schwelle „abgedeckt“", 0.0, 0.3, 0.05, 0.01, key="covered_delta",
+            "Schwelle „abgedeckt“", 0.0, 0.3, kept("covered_delta", 0.05), 0.01, key="covered_delta",
             help="Der beste eigene Chunk darf höchstens so weit unter dem besten Quell-Chunk liegen.")
         weak_delta = st.slider(
-            "Schwelle „schwach“", 0.0, 0.5, 0.15, 0.01, key="weak_delta",
+            "Schwelle „schwach“", 0.0, 0.5, kept("weak_delta", 0.15), 0.01, key="weak_delta",
             help="Bis zu diesem Abstand gilt eine Aussage als schwach abgedeckt, darunter als Lücke.")
         if weak_delta < covered_delta:
             st.warning("Die Schwelle „schwach“ liegt unter „abgedeckt“ und wird auf denselben Wert gesetzt.")
@@ -118,19 +138,30 @@ def fallback_embed():
     return embed
 
 
-def parse_upload(file, origin: str, slot: str):
-    """Parse an upload once per file and model; the parsed result lives in the session."""
-    if file is None:
-        state.pop(slot, None)
-        return None
-    signature = (file.name, file.size, getattr(file, "file_id", None), provider_name, model)
+def parse_upload(file, origin: str, slot: str, *, chunks_error: str = ""):
+    """Parse an upload once per file and model; the parsed result lives in the session.
+
+    Without a file (the uploader forgets its file when another mode runs) the parsed upload of an earlier run
+    stays in use until `forget_upload` removes it. A chunk-embedding export is accepted for own content only
+    when `chunks_error` is empty; otherwise that text is the error.
+    """
     cached = state.get(slot)
+    if file is None:
+        if cached and cached["chunks"] is not None and cached["sig"][3:5] != (provider_name, model):
+            old_provider, old_model = cached["sig"][3:5]
+            return {**cached, "error": f"Der Export wurde mit {old_provider} / {old_model} erzeugt, eingestellt ist "
+                                       f"{provider_name} / {model}. Bitte Anbieter und Modell in der Seitenleiste "
+                                       "anpassen oder die Datei erneut wählen."}
+        return cached
+    signature = (file.name, file.size, getattr(file, "file_id", None), provider_name, model)
     if cached and cached["sig"] == signature:
         return cached
     parsed = {"sig": signature, "error": None, "docs": [], "chunks": None, "stored_target": None, "note": ""}
     try:
         df, info = read_table_info(file, file.name)
-        if origin == OWN and chunks_file.is_chunks_table(info.columns):
+        if chunks_file.is_chunks_table(info.columns):
+            if chunks_error:
+                raise ValueError(chunks_error)
             parsed["chunks"], parsed["stored_target"] = chunks_file.chunks_from_frame(
                 df, provider=provider_name, model=model)
             parsed["note"] = (f"Chunk-Embedding-Export erkannt: {len(parsed['chunks'])} Chunks, "
@@ -148,9 +179,12 @@ def parse_upload(file, origin: str, slot: str):
     return parsed
 
 
-def show_upload_note(parsed) -> None:
+def show_upload_note(parsed, file, slot: str) -> None:
     if parsed is None:
         return
+    if file is None:  # the parsed upload of an earlier run is still in use
+        st.caption(f"Zuletzt geladen: {parsed['sig'][0]} – bleibt erhalten, bis du eine andere Datei wählst.")
+        st.button("Datei entfernen", key=f"{slot}_clear", type="tertiary", on_click=lambda: state.pop(slot, None))
     if parsed["error"]:
         st.error(parsed["error"])
     else:
@@ -261,10 +295,11 @@ def render_stage1() -> None:
             "Analyse trotzdem, der Status zeigt dann nur die relative Stärke innerhalb deines eigenen Contents.\n\n"
             "Tipp: Zeilen entfernen, die nicht zur Antwort gehören, etwa Hinweise wie „KI-Antworten können Fehler "
             "enthalten“ oder Titel von Quellenkarten.")
-    keyword = st.text_input("Keyword oder Prompt", key="keyword", placeholder="z. B. dachsanierung kosten")
-    answer_text = st.text_area("AI-Antwort (Text aus AI Overview oder AI Mode einfügen)", key="answer", height=260)
+    keyword = st.text_input("Keyword oder Prompt", value=kept("keyword", ""), key="keyword", placeholder="z. B. dachsanierung kosten")
+    answer_text = st.text_area("AI-Antwort (Text aus AI Overview oder AI Mode einfügen)", value=kept("answer", ""),
+                             key="answer", height=260)
     source_urls = parse_urls(st.text_area(
-        "Quell-URLs der AI-Antwort (optional, eine pro Zeile)", key="source_urls", height=110,
+        "Quell-URLs der AI-Antwort (optional, eine pro Zeile)", value=kept("source_urls", ""), key="source_urls", height=110,
         help="Die zitierten Quellen dienen als Benchmark. Ohne Quellen läuft die Analyse trotzdem."))
 
     st.header("2. Eigener Content")
@@ -283,19 +318,21 @@ def render_stage1() -> None:
         "Screaming-Frog-Export mit URL und Main Content, oder Chunk-Embedding-Export aus einem früheren Lauf",
         type=UPLOAD_TYPES, key="own_upload")
     own_parsed = parse_upload(own_file, OWN, "own_parsed")
-    show_upload_note(own_parsed)
+    show_upload_note(own_parsed, own_file, "own_parsed")
     own_urls = parse_urls(st.text_area(
-        "Eigene URLs (optional, eine pro Zeile). Das Tool lädt den Content selbst.", key="own_urls", height=110))
+        "Eigene URLs (optional, eine pro Zeile). Das Tool lädt den Content selbst.",
+        value=kept("own_urls", ""), key="own_urls", height=110))
     own_text = st.text_area(
-        "Eigenen Content als Text einfügen (optional, ein Absatz pro Zeile)", key="own_text", height=160,
+        "Eigenen Content als Text einfügen (optional, ein Absatz pro Zeile)", value=kept("own_text", ""),
+        key="own_text", height=160,
         help="Für einen schnellen Test ohne Export: den Main Content einer Seite hier einfügen. "
              "Er erscheint in den Ergebnissen als „Eingefügter Text“.").strip()
     pasted_docs = [Document(PASTED_URL, own_text, OWN)] if own_text else []
     source_file = st.file_uploader(
         "Optional: Content der Quell-URLs als Datei (gleiches Format wie der Frog-Export)",
         type=UPLOAD_TYPES, key="source_upload")
-    source_parsed = parse_upload(source_file, SOURCE, "source_parsed")
-    show_upload_note(source_parsed)
+    source_parsed = parse_upload(source_file, SOURCE, "source_parsed", chunks_error=SOURCE_CHUNKS_ERROR)
+    show_upload_note(source_parsed, source_file, "source_parsed")
 
     prechunked = bool(own_parsed and own_parsed["chunks"] is not None)
     if prechunked and (own_urls or pasted_docs):
@@ -421,8 +458,19 @@ def render_stage1() -> None:
 
 # ---------------------------------------------------------------- mode 2: paragraph against text
 
-def de(value: float) -> str:
-    return f"{value:.2f}".replace(".", ",")
+def show_comparison(comparison) -> None:
+    if comparison.windowed:
+        left, right = st.columns(2)
+        left.metric("Ganztext", report._de(comparison.whole_score))
+        right.metric("Bestes Fenster", report._de(comparison.score))
+        st.caption(f"Bestes Fenster ({comparison.window_words} Wörter)")
+        st.text(comparison.best_window)
+        subject, other = ("Die Aussage", "dein Text") if comparison.swapped else ("Dein Text", "die Aussage")
+        st.info(f"{subject} ist {round(comparison.ratio)}-mal so lang wie {other}. Der Ganztext-Wert wird durch "
+                "die Länge gedrückt; das beste Fenster zeigt, ob die Aussage an einer Stelle vorkommt.")
+    else:
+        st.metric("Kosinus", report._de(comparison.score))
+        st.markdown("Beide Texte sind ähnlich lang, der Wert gilt direkt.")
 
 
 def render_manual() -> None:
@@ -436,33 +484,26 @@ def render_manual() -> None:
             "zwischen den ganzen Texten. Ist dein Text deutlich länger, wird er in Fenster von der Länge der "
             "Aussage geschnitten. Du siehst dann zwei Werte: den **Ganztext-Wert**, den die Länge nach unten "
             "zieht, und den Wert des **besten Fensters**, der zeigt, ob die Aussage an einer Stelle vorkommt.")
-    short_text = st.text_area("Aussage oder Absatz der AI-Antwort", key="manual_short", height=140)
-    long_text = st.text_area("Dein Text", key="manual_long", height=260)
+    short_text = st.text_area("Aussage oder Absatz der AI-Antwort", value=kept("manual_short", ""), key="manual_short", height=140)
+    long_text = st.text_area("Dein Text", value=kept("manual_long", ""), key="manual_long", height=260)
     ready = bool(short_text.strip() and long_text.strip())
     if not ready:
         st.caption("Es fehlen noch die Aussage oder dein Text.")
-    if not st.button("Vergleichen", key="manual_button", disabled=not ready, type="primary"):
-        return
-    try:
-        provider = make_provider()
-        comparison = compare.compare_texts(
-            short_text, long_text, lambda texts: embeddings.embed_cached(provider, texts, state["cache"]),
-            provider_name)
-    except RUN_ERRORS as exc:
-        st.error(str(exc))
-        return
-    if comparison.windowed:
-        left, right = st.columns(2)
-        left.metric("Ganztext", de(comparison.whole_score))
-        right.metric("Bestes Fenster", de(comparison.score))
-        st.caption(f"Bestes Fenster ({comparison.window_words} Wörter)")
-        st.text(comparison.best_window)
-        ratio = round(comparison.long_words / comparison.short_words)
-        st.info(f"Dein Text ist {ratio}-mal so lang wie die Aussage. Der Ganztext-Wert wird durch die Länge "
-                "gedrückt; das beste Fenster zeigt, ob die Aussage an einer Stelle vorkommt.")
-    else:
-        st.metric("Kosinus", de(comparison.score))
-        st.markdown("Beide Texte sind ähnlich lang, der Wert gilt direkt.")
+    signature = (short_text.strip(), long_text.strip(), provider_name, model)
+    if st.button("Vergleichen", key="manual_button", disabled=not ready, type="primary"):
+        try:
+            provider = make_provider()
+            comparison = compare.compare_texts(
+                short_text, long_text, lambda texts: embeddings.embed_cached(provider, texts, state["cache"]),
+                provider_name)
+            state["manual_result"] = (signature, comparison)
+        except RUN_ERRORS as exc:
+            state.pop("manual_result", None)
+            st.error(str(exc))
+            return
+    stored = state.get("manual_result")
+    if stored is not None and stored[0] == signature:  # a result of other texts or another model is hidden
+        show_comparison(stored[1])
 
 
 # ---------------------------------------------------------------- mode 3: content gap
@@ -492,7 +533,7 @@ def render_gap_result(result) -> None:
             st.caption(f"Gezeigt werden die ersten {GAP_TEXT_ROWS} von {len(rows)} Zeilen. "
                        "Alle Texte stehen im Excel.")
         for gap_page, row in rows[:GAP_TEXT_ROWS]:
-            st.markdown(f"**{gap_page.url}** · Rang {row.rank} · Kosinus {de(row.score)}")
+            st.markdown(f"**{gap_page.url}** · Rang {row.rank} · Kosinus {report._de(row.score)}")
             st.markdown(f"Wettbewerber: **{row.competitor.title}**")
             st.text(row.competitor.text)
             st.markdown(f"Eigener Abschnitt ({row.own.url}): **{row.own.title}**")
@@ -522,30 +563,29 @@ def render_gap() -> None:
     st.subheader("Wettbewerber")
     comp_file = st.file_uploader("Screaming-Frog-Export der Wettbewerber-Seiten (URL und Main Content)",
                                  type=UPLOAD_TYPES, key="gap_competitor_upload")
-    comp_parsed = parse_upload(comp_file, SOURCE, "gap_competitor_parsed")
-    show_upload_note(comp_parsed)
+    comp_parsed = parse_upload(comp_file, SOURCE, "gap_competitor_parsed", chunks_error=GAP_CHUNKS_ERROR)
+    show_upload_note(comp_parsed, comp_file, "gap_competitor_parsed")
     comp_urls = parse_urls(st.text_area("Wettbewerber-URLs (eine pro Zeile). Das Tool lädt den Content selbst.",
-                                        key="gap_competitor_urls", height=110))
+                                        value=kept("gap_competitor_urls", ""), key="gap_competitor_urls",
+                                        height=110))
 
     st.subheader("Eigener Content")
     own_file = st.file_uploader("Screaming-Frog-Export deiner Seiten (URL und Main Content)",
                                 type=UPLOAD_TYPES, key="gap_own_upload")
-    own_parsed = parse_upload(own_file, OWN, "gap_own_parsed")
-    show_upload_note(own_parsed)
-    own_chunk_export = bool(own_parsed and own_parsed["chunks"] is not None)
-    if own_chunk_export:
-        st.error("Ein Chunk-Embedding-Export enthält keine Überschriften. Lade hier den Frog-Export mit dem "
-                 "Main Content hoch.")
-    own_urls = parse_urls(st.text_area("Eigene URLs (eine pro Zeile)", key="gap_own_urls", height=110))
+    own_parsed = parse_upload(own_file, OWN, "gap_own_parsed", chunks_error=GAP_CHUNKS_ERROR)
+    show_upload_note(own_parsed, own_file, "gap_own_parsed")
+    own_urls = parse_urls(st.text_area("Eigene URLs (eine pro Zeile)", value=kept("gap_own_urls", ""),
+                                  key="gap_own_urls", height=110))
     own_text = st.text_area("Eigenen Content als Text einfügen (optional, ein Absatz pro Zeile, Überschriften "
-                            "als „## Überschrift“)", key="gap_own_text", height=160).strip()
+                            "als „## Überschrift“)", value=kept("gap_own_text", ""), key="gap_own_text",
+                            height=160).strip()
 
     st.subheader("AI-Antwort (optional)")
-    gap_keyword = st.text_input("Keyword oder Prompt", key="gap_keyword")
-    gap_answer = st.text_area("AI-Antwort", key="gap_answer", height=160,
+    gap_keyword = st.text_input("Keyword oder Prompt", value=kept("gap_keyword", ""), key="gap_keyword")
+    gap_answer = st.text_area("AI-Antwort", value=kept("gap_answer", ""), key="gap_answer", height=160,
                               help="Mit Antwort bekommt jede Zeile die nächste Aussage der Antwort und deren Kosinus.")
 
-    upload_error = own_chunk_export or any(p is not None and p["error"] for p in (comp_parsed, own_parsed))
+    upload_error = any(p is not None and p["error"] for p in (comp_parsed, own_parsed))
     has_competitors = bool(comp_urls or (comp_parsed and comp_parsed["docs"]))
     has_own = bool(own_urls or own_text or (own_parsed and own_parsed["docs"]))
     ready = has_competitors and has_own and not upload_error
@@ -601,5 +641,5 @@ def render_gap() -> None:
 
 # ---------------------------------------------------------------- page
 
-{"AI-Antwort gegen Content": render_stage1, "Absatz gegen Text": render_manual,
- "Content-Gap zwischen Seiten": render_gap}[mode]()
+{MODE_STAGE1: render_stage1, MODE_MANUAL: render_manual, MODE_GAP: render_gap}[mode]()
+remember_inputs()

@@ -29,6 +29,8 @@ class Comparison:
     window_words: int     # word count of the best window (0 when not windowed)
     short_words: int
     long_words: int
+    swapped: bool = False  # the first text was the longer one and the arguments were swapped
+    ratio: float = 1.0     # words of the longer text / words of the shorter text
 
 
 def line_windows(text: str, target_words: int) -> list[str]:
@@ -96,9 +98,11 @@ def compare_texts(short: str, long: str, embed: Embed, provider_name: str) -> Co
     """Compare two texts; the one with fewer words is treated as the short statement."""
     if not short.strip() or not long.strip():
         raise ValueError("Beide Texte müssen ausgefüllt sein.")
-    if len(short.split()) > len(long.split()):
+    swapped = len(short.split()) > len(long.split())
+    if swapped:
         short, long = long, short
     short_words, long_words = len(short.split()), len(long.split())
+    ratio = long_words / short_words
     # Only a long text that really yields several windows is compared window by window.
     windows = long_windows(long, short_words) if long_words > LENGTH_RATIO * short_words else []
     windowed = len(windows) > 1
@@ -115,10 +119,10 @@ def compare_texts(short: str, long: str, embed: Embed, provider_name: str) -> Co
         raise ValueError("Für einen der Texte konnte kein Embedding berechnet werden.")
     whole_score = _cosine(short_vec, long_vec)
     if not windowed:
-        return Comparison(whole_score, whole_score, False, "", 0, short_words, long_words)
+        return Comparison(whole_score, whole_score, False, "", 0, short_words, long_words, swapped, ratio)
 
     scored = [(_cosine(short_vec, unit_rows(vectors[w][None, :])[0]), w) for w in windows if w in vectors]
     if not scored:
         raise ValueError("Für den längeren Text konnte kein Fenster eingebettet werden.")
     score, best = max(scored, key=lambda item: item[0])
-    return Comparison(score, whole_score, True, best, len(best.split()), short_words, long_words)
+    return Comparison(score, whole_score, True, best, len(best.split()), short_words, long_words, swapped, ratio)

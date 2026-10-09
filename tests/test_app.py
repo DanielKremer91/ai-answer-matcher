@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from aam import gap_report
 from aam.embeddings import EmbeddingError
 from aam.ingest.chunks_file import chunks_to_csv
 from aam.models import OWN, SOURCE, Document, FailedUrl
@@ -464,9 +465,66 @@ def test_manual_comparison_of_a_statement_and_a_long_text_shows_both_values_and_
     assert best > whole
     assert any("Eine Neueindeckung kostet" in t.value for t in at.text)
     ratio = round(len(LONG_TEXT.split()) / len(SHORT_STATEMENT.split()))
-    assert any(i.value == f"Dein Text ist {ratio}-mal so lang wie die Aussage. Der Ganztext-Wert wird durch die "
-                          "Länge gedrückt; das beste Fenster zeigt, ob die Aussage an einer Stelle vorkommt."
-               for i in at.info)
+    assert [i.value for i in at.info] == [
+        f"Dein Text ist {ratio}-mal so lang wie die Aussage. Der Ganztext-Wert wird durch die "
+        "Länge gedrückt; das beste Fenster zeigt, ob die Aussage an einer Stelle vorkommt."]
+
+
+def test_manual_hint_names_the_statement_as_longer_when_field_a_is_the_longer_text():
+    at = set_mode(AppTest.from_file(APP, default_timeout=30).run(), MODE_2)
+    at.text_area(key="manual_short").input(LONG_TEXT)
+    at.text_area(key="manual_long").input(SHORT_STATEMENT)
+    at.run()
+    button(at, "Vergleichen").click()
+    at.run()
+    assert not at.exception and not at.error
+    ratio = round(len(LONG_TEXT.split()) / len(SHORT_STATEMENT.split()))
+    assert [i.value for i in at.info] == [
+        f"Die Aussage ist {ratio}-mal so lang wie dein Text. Der Ganztext-Wert wird durch die "
+        "Länge gedrückt; das beste Fenster zeigt, ob die Aussage an einer Stelle vorkommt."]
+
+
+def compare_manually(at: AppTest) -> AppTest:
+    at.text_area(key="manual_short").input(SHORT_STATEMENT)
+    at.text_area(key="manual_long").input(LONG_TEXT)
+    at.run()
+    button(at, "Vergleichen").click()
+    return at.run()
+
+
+def test_manual_result_survives_a_rerun_and_a_mode_round_trip():
+    at = compare_manually(set_mode(AppTest.from_file(APP, default_timeout=30).run(), MODE_2))
+    shown = [(m.label, m.value) for m in at.metric]
+    assert shown and "manual_result" in at.session_state
+    at.run()  # any rerun without a click
+    assert [(m.label, m.value) for m in at.metric] == shown and at.info
+    set_mode(at, MODE_1)
+    assert not at.metric
+    set_mode(at, MODE_2)
+    assert not at.exception and not at.error and not at.warning
+    assert [(m.label, m.value) for m in at.metric] == shown and at.info
+
+
+def test_manual_result_is_hidden_after_the_text_or_the_model_changes():
+    at = compare_manually(set_mode(AppTest.from_file(APP, default_timeout=30).run(), MODE_2))
+    assert at.metric
+    at.text_area(key="manual_long").input(LONG_TEXT + " Noch ein Satz.").run()
+    assert not at.metric and not at.info
+    at.text_area(key="manual_long").input(LONG_TEXT).run()
+    assert at.metric  # the same texts show the stored result again
+    at.sidebar.text_input(key="model_openai").input("text-embedding-3-large").run()
+    assert not at.metric
+
+
+def test_manual_error_removes_the_stored_result(monkeypatch):
+    at = compare_manually(set_mode(AppTest.from_file(APP, default_timeout=30).run(), MODE_2))
+    assert "manual_result" in at.session_state
+    monkeypatch.setattr("aam.embeddings.make_provider",
+                        lambda *a, **k: (_ for _ in ()).throw(EmbeddingError("Kein API-Key.")))
+    button(at, "Vergleichen").click()
+    at.run()
+    assert [e.value for e in at.error] == ["Kein API-Key."]
+    assert "manual_result" not in at.session_state and not at.metric
 
 
 def test_manual_comparison_of_similar_lengths_shows_one_value():
@@ -507,8 +565,9 @@ def test_gap_mode_compares_sections_and_offers_the_excel(backend):
     assert "Nächste AI-Aussage" not in frame.columns
     assert list(frame["Kosinus"]) == sorted(frame["Kosinus"], reverse=True)
     assert "https://quelle.de/foerderung" in at.code[0].value and "Abschnittsebene H2" in at.code[0].value
-    assert any("Kandidaten für Lücken" in m.value or "Kandidat für eine Lücke" in m.value
-               or "alle 2 Abschnitte" in m.value for m in at.markdown)
+    summary = gap_report.gap_summary(at.session_state["gap_result"])
+    assert "haben bei dir einen Gegenpart" in summary and "Kandidat" in summary
+    assert [m.value for m in at.markdown if "haben bei dir einen Gegenpart" in m.value] == [summary]
     assert any(e.label == "Texte nachlesen" for e in at.expander)
     assert [b.key for b in at.get("download_button")] == ["gap_download"]
     assert "gap_result" in at.session_state
@@ -608,3 +667,166 @@ def test_stage_one_still_runs_after_a_mode_round_trip():
     assert not at.exception and not at.error
     assert at.session_state["result"].match.has_sources is False
     assert [h.value[0] for h in at.header if h.value[0].isdigit()] == ["1", "2", "3", "4"]
+
+
+# ---------------------------------------------------------------- uploads across mode switches
+
+KEPT_CAPTION = "bleibt erhalten, bis du eine andere Datei wählst."
+
+
+def result_is_shown(at: AppTest) -> bool:
+    return (any("Seitenscore" in d.value.columns for d in at.dataframe)
+            and not [w for w in at.warning if "geändert" in w.value])
+
+
+def test_stage_one_results_survive_a_round_trip_through_another_mode():
+    at = analyzed(source_file=True)
+    assert result_is_shown(at)
+    set_mode(at, MODE_2)
+    assert not at.exception and not at.dataframe
+    set_mode(at, MODE_1)
+    assert not at.exception and not at.error
+    assert result_is_shown(at), "result must still be shown, without a 'geändert' warning"
+    assert not at.warning
+    assert at.file_uploader(key="own_upload").value is None  # the uploader itself is empty again
+    assert any(c.value == f"Zuletzt geladen: frog.csv – {KEPT_CAPTION}" for c in at.caption)
+    assert any(c.value == f"Zuletzt geladen: quellen.csv – {KEPT_CAPTION}" for c in at.caption)
+    assert len(at.get("download_button")) == 2
+    assert button(at, ANALYZE_BUTTON).disabled is False  # still usable without a new upload
+
+
+def test_kept_upload_feeds_a_new_chunking_after_the_round_trip():
+    at = start()
+    set_mode(at, MODE_3)
+    set_mode(at, MODE_1)
+    button(at, CHUNK_BUTTON).click()
+    at.run()
+    assert not at.exception and not at.error
+    assert "Eigener Content: 2 Seiten → 3 Chunks" in at.code[0].value
+
+
+def test_clear_button_removes_a_kept_upload():
+    at = start()
+    assert not [b for b in at.button if b.key == "own_parsed_clear"]  # nothing to clear while the file is chosen
+    set_mode(at, MODE_2)
+    set_mode(at, MODE_1)
+    clear = next(b for b in at.button if b.key == "own_parsed_clear")
+    assert clear.label == "Datei entfernen"
+    clear.click()
+    at.run()
+    assert not at.exception
+    assert not has_state(at, "own_parsed")
+    assert not [b for b in at.button if b.key == "own_parsed_clear"]
+    assert not any(KEPT_CAPTION in c.value for c in at.caption)
+    assert button(at, CHUNK_BUTTON).disabled is True  # no own content any more
+
+
+def test_choosing_another_file_replaces_the_kept_one():
+    at = start()
+    set_mode(at, MODE_2)
+    set_mode(at, MODE_1)
+    at.file_uploader(key="own_upload").set_value(("neu.csv", table_csv(OWN_DOCS[:1]), "text/csv"))
+    at.run()
+    assert at.session_state["own_parsed"]["sig"][0] == "neu.csv"
+    assert not any(KEPT_CAPTION in c.value and "frog.csv" in c.value for c in at.caption)
+    assert any("1 Seite" in c.value for c in at.caption)
+
+
+def test_gap_results_with_uploaded_tables_survive_a_round_trip(backend):
+    at = set_mode(AppTest.from_file(APP, default_timeout=30).run(), MODE_3)
+    at.file_uploader(key="gap_competitor_upload").set_value(
+        ("wettbewerb.csv", table_csv([headed(d) for d in SOURCE_DOCS]), "text/csv"))
+    at.file_uploader(key="gap_own_upload").set_value(
+        ("frog.csv", table_csv([headed(d) for d in OWN_DOCS]), "text/csv"))
+    at.run()
+    button(at, "Abschnitte vergleichen").click()
+    at.run()
+    assert at.dataframe and not at.warning
+    set_mode(at, MODE_1)
+    assert not at.dataframe
+    set_mode(at, MODE_3)
+    assert not at.exception and not at.error
+    assert at.dataframe and at.get("download_button")
+    assert not [w for w in at.warning if "geändert" in w.value]
+    assert any(c.value == f"Zuletzt geladen: wettbewerb.csv – {KEPT_CAPTION}" for c in at.caption)
+    assert any(c.value == f"Zuletzt geladen: frog.csv – {KEPT_CAPTION}" for c in at.caption)
+    assert button(at, "Abschnitte vergleichen").disabled is False
+    next(b for b in at.button if b.key == "gap_competitor_parsed_clear").click()
+    at.run()
+    assert not has_state(at, "gap_competitor_parsed")
+    assert button(at, "Abschnitte vergleichen").disabled is True
+    assert any("Eingaben haben sich" in w.value for w in at.warning)
+
+
+def test_kept_chunk_export_is_rejected_when_the_model_changed_meanwhile():
+    at = upload_chunk_export("text-embedding-3-small")
+    assert not at.error
+    set_mode(at, MODE_2)
+    at.sidebar.text_input(key="model_openai").input("text-embedding-3-large").run()
+    set_mode(at, MODE_1)
+    assert any("erzeugt, eingestellt ist openai / text-embedding-3-large" in e.value for e in at.error)
+    assert button(at, CHUNK_BUTTON).disabled is True
+
+
+@pytest.mark.parametrize("slot", ["gap_competitor_upload", "gap_own_upload"])
+def test_gap_mode_rejects_a_chunk_embedding_export_in_either_slot(backend, slot):
+    data = chunks_to_csv(sample_result().own_chunks, provider="openai", model="text-embedding-3-small",
+                         target_words=15)
+    at = set_mode(AppTest.from_file(APP, default_timeout=30).run(), MODE_3)
+    at.text_area(key="gap_competitor_urls").input("https://quelle.de/foerderung")
+    at.text_area(key="gap_own_urls").input("https://me.de/kosten")
+    at.file_uploader(key=slot).set_value(("chunks_embeddings.csv", data, "text/csv"))
+    at.run()
+    assert not at.exception
+    assert [e.value for e in at.error] == [
+        "Ein Chunk-Embedding-Export enthält keine Überschriften. Lade hier den Frog-Export mit dem "
+        "Main Content hoch."]
+    assert button(at, "Abschnitte vergleichen").disabled is True
+
+
+def test_stage_one_source_slot_rejects_a_chunk_embedding_export():
+    data = chunks_to_csv(sample_result().own_chunks, provider="openai", model="text-embedding-3-small",
+                         target_words=15)
+    at = start()
+    at.file_uploader(key="source_upload").set_value(("chunks_embeddings.csv", data, "text/csv"))
+    at.run()
+    assert any("gilt nur für den eigenen Content" in e.value for e in at.error)
+    assert button(at, CHUNK_BUTTON).disabled is True
+
+
+# ---------------------------------------------------------------- sidebar values and session-state writes
+
+def test_sidebar_values_survive_a_round_trip_through_another_mode():
+    at = new_app()
+    at.sidebar.checkbox(key="merge_short").set_value(False)
+    at.sidebar.checkbox(key="split_long").set_value(False)
+    at.sidebar.number_input(key="target_override").set_value(25)
+    at.sidebar.slider(key="covered_delta").set_value(0.1)
+    at.sidebar.slider(key="weak_delta").set_value(0.3)
+    at.run()
+    set_mode(at, MODE_2)
+    assert not at.sidebar.slider and not at.sidebar.checkbox
+    set_mode(at, MODE_3)
+    set_mode(at, MODE_1)
+    assert not at.exception and not at.warning
+    assert at.sidebar.checkbox(key="merge_short").value is False
+    assert at.sidebar.checkbox(key="split_long").value is False
+    assert at.sidebar.number_input(key="target_override").value == 25
+    assert at.sidebar.slider(key="covered_delta").value == pytest.approx(0.1)
+    assert at.sidebar.slider(key="weak_delta").value == pytest.approx(0.3)
+    assert at.text_input(key="keyword").value == KEYWORD
+
+
+def test_mode_switches_do_not_log_the_session_state_write_warning(caplog, monkeypatch):
+    import streamlit.elements.lib.policies as policies
+
+    monkeypatch.setattr(policies, "_shown_default_value_warning", False)  # Streamlit warns once per process
+    at = new_app()
+    at.sidebar.checkbox(key="merge_short").set_value(False)
+    at.run()
+    with caplog.at_level("WARNING"):
+        for mode in (MODE_2, MODE_3, MODE_1, MODE_3, MODE_2, MODE_1):
+            set_mode(at, mode)
+    assert not at.exception
+    assert not [r for r in caplog.records if "Session State API" in r.getMessage()]
+    assert at.sidebar.checkbox(key="merge_short").value is False
