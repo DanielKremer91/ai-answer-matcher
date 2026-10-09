@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import statistics
 from dataclasses import dataclass
 from typing import Optional
 
@@ -13,6 +14,8 @@ HEADING = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
 
 INTRO_TITLE = "Einleitung"
 WHOLE_PAGE_TITLE = "Gesamte Seite"
+# A block with deeper headings is split further when it is longer than this many times the median block.
+OVERSIZE_FACTOR = 2
 
 
 @dataclass(frozen=True)
@@ -24,6 +27,11 @@ class Section:
     level: int  # heading level of the section; 0 for the introduction / the whole page
     text: str  # section body, one paragraph per line, no heading markers
     words: int
+
+    @property
+    def embed_text(self) -> str:
+        """The text that is embedded and windowed: the title carries the topic (an FAQ heading is the question)."""
+        return f"{self.title}\n{self.text}"
 
 
 def strip_heading_marker(line: str) -> str:
@@ -61,6 +69,36 @@ def _first_h1(lines: list[str]) -> Optional[str]:
     return None
 
 
+_Body = list[tuple[Optional[int], str]]  # (heading level or None, text without marker)
+_Block = tuple[str, int, _Body]  # (title, level, body)
+
+
+def _body_text(body: _Body) -> str:
+    return "\n".join(normalize_space(text) for _, text in body)
+
+
+def _split_oversized(blocks: list[_Block], level: int) -> list[_Block]:
+    """Cut every block that holds deeper headings and is much longer than the median block at those headings."""
+    sizes = [count_words(_body_text(body)) for _, _, body in blocks if _body_text(body).strip()]
+    if not sizes:
+        return blocks
+    limit = OVERSIZE_FACTOR * statistics.median_low(sizes)
+    result: list[_Block] = []
+    for title, block_level, body in blocks:
+        deeper = {lvl for lvl, _ in body if lvl is not None and lvl > level}
+        if not deeper or count_words(_body_text(body)) <= limit:
+            result.append((title, block_level, body))
+            continue
+        sub = min(deeper)
+        result.append((title, block_level, []))
+        for lvl, text in body:
+            if lvl == sub:
+                result.append((text, sub, []))
+            else:
+                result[-1][2].append((lvl, text))
+    return result
+
+
 def split_sections(doc: Document) -> list[Section]:
     lines = _lines(doc.text)
     if not lines:
@@ -71,10 +109,10 @@ def split_sections(doc: Document) -> list[Section]:
         text = "\n".join(body)
         return [Section(doc.url, doc.origin, 0, _first_h1(lines) or WHOLE_PAGE_TITLE, 0, text, count_words(text))]
 
-    # blocks: (title, body lines); the first block is the introduction. Only an H1 before the first
+    # blocks: (title, level, body lines); the first block is the introduction. Only an H1 before the first
     # section heading names the introduction (and is not part of its text); any other H1 is a plain line.
     intro_title: Optional[str] = None
-    blocks: list[tuple[str, int, list[str]]] = [(INTRO_TITLE, 0, [])]
+    blocks: list[_Block] = [(INTRO_TITLE, 0, [])]
     for line in lines:
         current = heading_level(line)
         if current == level:
@@ -82,13 +120,13 @@ def split_sections(doc: Document) -> list[Section]:
         elif current == 1 and len(blocks) == 1 and intro_title is None:
             intro_title = strip_heading_marker(line)
         else:
-            blocks[-1][2].append(strip_heading_marker(line))
+            blocks[-1][2].append((current, strip_heading_marker(line)))
     if intro_title:
         blocks[0] = (intro_title, 0, blocks[0][2])
 
     sections: list[Section] = []
-    for title, block_level, body in blocks:
-        text = "\n".join(normalize_space(line) for line in body)
+    for title, block_level, body in _split_oversized(blocks, level):
+        text = _body_text(body)
         if not text.strip():
             continue
         sections.append(Section(doc.url, doc.origin, len(sections), title, block_level, text, count_words(text)))

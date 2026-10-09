@@ -113,3 +113,57 @@ def test_crlf_line_endings_give_clean_titles():
 def test_plain_text_strips_markers_and_empty_lines():
     assert plain_text("## Kosten\n\n  Text hier.  \n### Tief\r\nMehr.") == "Kosten\nText hier.\nTief\nMehr."
     assert plain_text(doc("# T\nx")) == "T\nx"
+
+
+def test_embed_text_prefixes_the_title_while_text_stays_the_body():
+    sections = split_sections(doc("# Mein Titel\nEins.\n## Nur eine\nZwei."))
+    assert [s.embed_text for s in sections] == ["Mein Titel\nEins.", "Nur eine\nZwei."]
+    assert [s.text for s in sections] == ["Eins.", "Zwei."]
+    whole = split_sections(doc("Absatz eins hier.\nAbsatz zwei hier."))[0]
+    assert whole.embed_text == "Gesamte Seite\nAbsatz eins hier.\nAbsatz zwei hier."
+
+
+def block(prefix: str, n: int = 80) -> str:
+    return " ".join(f"{prefix}{i}" for i in range(n))
+
+
+def test_oversized_block_with_deeper_headings_is_split_at_the_deeper_level():
+    # The only H2 is a tiny newsletter box; the three H3 sections would otherwise vanish in the intro.
+    text = "\n".join(["# Ratgeber", "Vorab ein Satz hier.", "### A", block("a"), "### B", block("b"), "### C",
+                      block("c"), "## Newsletter", "Jetzt zum Newsletter anmelden bitte"])
+    sections = split_sections(doc(text))
+    assert [(s.index, s.title, s.level) for s in sections] == [
+        (0, "Ratgeber", 0), (1, "A", 3), (2, "B", 3), (3, "C", 3), (4, "Newsletter", 2)]
+    assert sections[0].text == "Vorab ein Satz hier."
+    assert sections[1].text == block("a")
+    assert all("#" not in s.text for s in sections)
+
+
+def test_split_of_an_oversized_block_without_intro_text_gives_the_four_sections():
+    text = "\n".join(["### A", block("a"), "### B", block("b"), "### C", block("c"),
+                      "## Newsletter", "Jetzt zum Newsletter anmelden"])
+    sections = split_sections(doc(text))
+    assert [(s.title, s.level) for s in sections] == [("A", 3), ("B", 3), ("C", 3), ("Newsletter", 2)]
+
+
+def test_oversized_h2_section_is_split_at_its_h3_with_the_head_kept():
+    text = "\n".join(["## Kurz", block("k", 30), "## Lang", "Kopf des Abschnitts.", "### Teil 1", block("x"),
+                      "### Teil 2", block("y"), "## Auch kurz", block("z", 30)])
+    sections = split_sections(doc(text))
+    assert [(s.title, s.level) for s in sections] == [
+        ("Kurz", 2), ("Lang", 2), ("Teil 1", 3), ("Teil 2", 3), ("Auch kurz", 2)]
+    assert sections[1].text == "Kopf des Abschnitts."
+
+
+def test_block_with_deeper_headings_of_normal_size_is_not_split():
+    text = "\n".join(["## A", block("a", 30), "### Unter", block("u", 30), "## B", block("b", 40)])
+    assert [(s.title, s.level) for s in split_sections(doc(text))] == [("A", 2), ("B", 2)]
+
+
+def test_split_uses_the_smallest_deeper_level_and_keeps_even_deeper_headings_as_text():
+    text = "\n".join(["## Newsletter", "Kurz hier.", "## Lang", "### T1", block("a"), "#### Tief", block("b"),
+                      "### T2", block("c"), "## Ende", "Wenige Worte hier."])
+    sections = split_sections(doc(text))
+    assert [(s.title, s.level) for s in sections] == [
+        ("Newsletter", 2), ("T1", 3), ("T2", 3), ("Ende", 2)]
+    assert "Tief" in sections[1].text and "#" not in sections[1].text
