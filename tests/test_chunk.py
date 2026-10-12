@@ -179,7 +179,10 @@ def test_stats_list_the_split_paragraphs_and_the_settings():
     long_paragraph = " ".join(sentence(i) for i in range(1, 6))
     docs = [doc(long_paragraph, "https://me.de/lang"), doc(sentence(9, 20), "https://me.de/kurz")]
     _, stats = chunk_documents(docs, 20)
-    assert stats.split_examples == (("https://me.de/lang", 60, 3),)
+    assert len(stats.split_examples) == 1
+    url, words, windows, preview = stats.split_examples[0]
+    assert (url, words, windows) == ("https://me.de/lang", 60, 3)
+    assert preview.startswith("Satz1 wort10") and preview.endswith(" …")
     assert (stats.merge_short, stats.split_long) == (True, True)
     _, stats = chunk_documents(docs, 20, split_long=False, merge_short=False)
     assert stats.split_examples == () and stats.split == 0

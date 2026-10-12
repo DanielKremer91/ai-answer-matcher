@@ -54,12 +54,12 @@ MAX_SPLIT_EXAMPLES = 20
 
 
 def _chunk_document(doc: Document, target_words: int, *, merge_short: bool, split_long: bool
-                    ) -> tuple[list[Chunk], int, int, list[tuple[str, int, int]]]:
+                    ) -> tuple[list[Chunk], int, int, list[tuple[str, int, int, str]]]:
     limit = 2 * target_words
     half = target_words / 2
     pieces: list[tuple[str, bool]] = []  # (text, is a continuation window of a split paragraph)
     split = 0
-    examples: list[tuple[str, int, int]] = []
+    examples: list[tuple[str, int, int, str]] = []
     for line in doc.text.split("\n"):
         paragraph = normalize_space(strip_heading_marker(line.strip()))
         if not paragraph:
@@ -69,7 +69,8 @@ def _chunk_document(doc: Document, target_words: int, *, merge_short: bool, spli
             windows = _windows(paragraph, target_words)
             if len(windows) > 1:
                 split += 1
-                examples.append((doc.url, words, len(windows)))
+                preview = " ".join(paragraph.split()[:10]) + " …"
+                examples.append((doc.url, words, len(windows), preview))
             pieces.extend((w, i > 0) for i, w in enumerate(windows))
         else:
             pieces.append((paragraph, False))
@@ -108,7 +109,7 @@ def chunk_document(doc: Document, target_words: int, *, merge_short: bool = True
 
 
 def stats_for(chunks: Sequence[Chunk], *, documents: int, merged: int = 0, split: int = 0,
-              empty_urls: Sequence[str] = (), split_examples: Sequence[tuple[str, int, int]] = (),
+              empty_urls: Sequence[str] = (), split_examples: Sequence[tuple[str, int, int, str]] = (),
               merge_short: bool = True, split_long: bool = True) -> ChunkStats:
     words = [c.words for c in chunks]
     if not words:
@@ -124,7 +125,7 @@ def chunk_documents(docs: Sequence[Document], target_words: int, *, merge_short:
     chunks: list[Chunk] = []
     merged = split = 0
     empty: list[str] = []
-    examples: list[tuple[str, int, int]] = []
+    examples: list[tuple[str, int, int, str]] = []
     for doc in docs:
         doc_chunks, doc_merged, doc_split, doc_examples = _chunk_document(
             doc, target_words, merge_short=merge_short, split_long=split_long)
