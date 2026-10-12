@@ -24,7 +24,7 @@ def test_excel_has_six_sheets_and_each_starts_with_the_keyword():
 def test_pages_frame_with_sources():
     df = pages_frame(sample_result())
     assert list(df.columns) == ["Keyword/Prompt", "Rang", "URL", "Herkunft", "Seitenscore", "Bester Chunk Score",
-                                "Aussagen abgedeckt", "Aussagen gesamt"]
+                                "Aussagen abgedeckt", "Aussagen gesamt", "Seitenvektor"]
     assert list(df["Rang"]) == [1, 2, 3]
     assert set(df["Herkunft"]) == {"eigen", "Quelle"}
     assert set(df["Aussagen gesamt"]) == {5}
@@ -318,3 +318,22 @@ def test_protocol_line_shows_the_content_factor():
     answer = segment_answer("dachsanierung kosten", ANSWER, content_factor=1.5)
     line = protocol_lines(answer, result.own_stats, result.source_stats, [])[0]
     assert "Median 12 Wörter × 1,5 → Zielgröße 18 Wörter" in line
+
+
+def test_pages_frame_says_how_each_page_vector_was_built():
+    result = sample_result()
+    df = pages_frame(result)
+    assert list(df.columns)[-1] == "Seitenvektor"
+    assert set(df["Seitenvektor"]) == {"komplett"}
+    import dataclasses
+    averaged = dataclasses.replace(result, page_vectors={})
+    assert set(pages_frame(averaged)["Seitenvektor"]) == {"Durchschnitt der Chunks"}
+
+
+def test_overlong_pages_lists_pages_above_the_model_limit():
+    from aam.report import overlong_pages
+
+    texts = {("own", "https://me.de/kurz"): "kurz", ("own", "https://me.de/lang"): " ".join(["wort"] * 1300)}
+    assert overlong_pages(texts, "gemini") == [
+        "https://me.de/lang: 1300 Wörter, über der Grenze von 1200 Wörtern für gemini → Seitenvektor als Durchschnitt der Chunks"]
+    assert overlong_pages(texts, "openai") == []

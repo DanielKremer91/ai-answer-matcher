@@ -928,3 +928,13 @@ def test_mode_switch_shows_an_info_text_for_the_chosen_mode():
     at = set_mode(at, MODE_3)
     assert any(m.value.startswith("**Content-Gap zwischen Seiten:**") for m in at.markdown)
     assert not any(m.value.startswith("**AI-Antwort gegen Content:**") for m in at.markdown)
+
+
+def test_step_three_warns_about_pages_too_long_for_the_model(backend):
+    at = new_app()
+    at.text_area(key="own_text").input(" ".join(["Wort"] * 5100) + ".")
+    at.run()
+    button(at, CHUNK_BUTTON).click()
+    at.run()
+    assert not at.exception and not at.error
+    assert any("über der Grenze von 5000 Wörtern" in w.value for w in at.warning)

@@ -452,6 +452,8 @@ def render_stage1() -> None:
                            "Abschaltbar in der Seitenleiste.")
                 for url, words, windows, preview in split_examples:
                     st.markdown(f"- {url} · „{preview}“ · {words} Wörter → {windows} Fenster")
+        for line in report.overlong_pages(prepared.page_texts, provider_name):
+            st.warning(line)
         st.caption(f"Im nächsten Schritt werden bis zu {prepared.texts_to_embed} Texte eingebettet.")
 
     st.header("4. Analysieren")

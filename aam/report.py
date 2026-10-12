@@ -70,12 +70,28 @@ def _excel_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return frame
 
 
+WHOLE_VECTOR = "komplett"
+AVERAGED_VECTOR = "Durchschnitt der Chunks"
+
+
 def pages_frame(result: Result) -> pd.DataFrame:
     covered = "Aussagen abgedeckt" if result.match.has_sources else "Aussagen mit bestem Chunk"
     rows = [(p.rank, p.url, ORIGIN_LABELS[p.origin], _score(p.page_score), _score(p.best_chunk_score),
-             p.covered, p.total) for p in result.match.pages]
-    columns = ["Rang", "URL", "Herkunft", "Seitenscore", "Bester Chunk Score", covered, "Aussagen gesamt"]
+             p.covered, p.total, WHOLE_VECTOR if (p.origin, p.url) in result.page_vectors else AVERAGED_VECTOR)
+            for p in result.match.pages]
+    columns = ["Rang", "URL", "Herkunft", "Seitenscore", "Bester Chunk Score", covered, "Aussagen gesamt",
+               "Seitenvektor"]
     return _frame(rows, columns, result.meta.keyword)
+
+
+def overlong_pages(page_texts: dict, provider_name: str) -> list[str]:
+    """German lines naming the pages whose whole text exceeds the provider's limit (shown before embedding)."""
+    from aam.embeddings import DEFAULT_WHOLE_TEXT_WORDS, WHOLE_TEXT_WORD_LIMITS, fits_whole_text
+
+    limit = WHOLE_TEXT_WORD_LIMITS.get(provider_name, DEFAULT_WHOLE_TEXT_WORDS)
+    return [f"{url}: {len(text.split())} Wörter, über der Grenze von {limit} Wörtern für {provider_name} "
+            f"→ Seitenvektor als {AVERAGED_VECTOR}"
+            for (_, url), text in page_texts.items() if not fits_whole_text(provider_name, text)]
 
 
 def _hit_cells(match_row, has_sources: bool) -> list:
