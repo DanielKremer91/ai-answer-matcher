@@ -920,3 +920,11 @@ def test_split_paragraphs_are_listed_with_a_preview():
     at.run()
     assert not at.exception and not at.error
     assert any("Eingefügter Text · „Satz1 wort1a" in m.value and "Fenster" in m.value for m in at.markdown)
+
+
+def test_mode_switch_shows_an_info_text_for_the_chosen_mode():
+    at = AppTest.from_file(APP, default_timeout=30).run()
+    assert any(m.value.startswith("**AI-Antwort gegen Content:**") for m in at.markdown)
+    at = set_mode(at, MODE_3)
+    assert any(m.value.startswith("**Content-Gap zwischen Seiten:**") for m in at.markdown)
+    assert not any(m.value.startswith("**AI-Antwort gegen Content:**") for m in at.markdown)

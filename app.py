@@ -68,9 +68,22 @@ def remember_inputs() -> None:
 
 
 st.title("AI Answer Matcher")
-mode = st.radio("Modus", [MODE_STAGE1, MODE_MANUAL, MODE_GAP], key="mode", horizontal=True)
 st.caption("Wie nah ist dein Content an der Antwort von AI Overviews oder AI Mode? "
            "Vergleich per Embeddings und Kosinus-Ähnlichkeit, auf Seiten- und auf Passagen-Ebene.")
+MODE_INFO = {
+    MODE_STAGE1: "**AI-Antwort gegen Content:** Du fügst eine AI-Antwort ein, dazu deinen Content (Frog-Export, "
+                 "URLs oder Text) und optional die zitierten Quellen. Ergebnis: Welche Seite passt insgesamt "
+                 "(Seitenscore, unabhängig vom Chunking), welcher Absatz deckt welche Aussage ab, wo sind die "
+                 "Lücken gegenüber den Quellen.",
+    MODE_MANUAL: "**Absatz gegen Text:** Zwei Felder, ein Wert. Eine Aussage oder die ganze AI-Antwort links, "
+                 "ein Absatz oder dein ganzer Text rechts. Ist der Text viel länger als die Aussage, zeigt das "
+                 "Tool zusätzlich das beste Fenster. Keine Dateien, kein Chunking-Schritt.",
+    MODE_GAP: "**Content-Gap zwischen Seiten:** Eine Wettbewerber-Seite gegen deine Seite oder Domain, Abschnitt "
+              "gegen Abschnitt nach Überschriften. Die sortierte Liste zeigt, welche Abschnitte des Wettbewerbers "
+              "bei dir keinen Gegenpart haben. Mit AI-Antwort auch, welche davon für die Antwort zählen.",
+}
+mode = st.radio("Modus", [MODE_STAGE1, MODE_MANUAL, MODE_GAP], key="mode", horizontal=True)
+st.markdown(MODE_INFO[mode])
 
 
 # ---------------------------------------------------------------- sidebar
