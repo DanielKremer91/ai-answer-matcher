@@ -88,7 +88,7 @@ def analyzed(**kwargs) -> AppTest:
 def test_first_render_shows_four_steps_and_disabled_buttons():
     at = AppTest.from_file(APP, default_timeout=30).run()
     assert not at.exception
-    assert [h.value[0] for h in at.header if h.value[0].isdigit()] == ["1", "2", "3", "4"]
+    assert [h.value[0] for h in at.header if h.value[0].isdigit()] == ["1", "2", "3", "4", "5"]
     assert button(at, CHUNK_BUTTON).disabled is True
     assert button(at, ANALYZE_BUTTON).disabled is True
     assert at.sidebar.selectbox[0].value == "openai"
@@ -715,7 +715,7 @@ def test_stage_one_still_runs_after_a_mode_round_trip():
     at.run()
     assert not at.exception and not at.error
     assert at.session_state["result"].match.has_sources is False
-    assert [h.value[0] for h in at.header if h.value[0].isdigit()] == ["1", "2", "3", "4"]
+    assert [h.value[0] for h in at.header if h.value[0].isdigit()] == ["1", "2", "3", "4", "5"]
 
 
 # ---------------------------------------------------------------- uploads across mode switches
@@ -991,3 +991,11 @@ def test_failed_analysis_marks_the_status_box_as_error(monkeypatch):
     monkeypatch.setattr("aam.embeddings.make_provider", no_key)
     at = analyzed()
     assert any(st.state == "error" and st.label == "Abgebrochen" for st in at.status)
+
+
+def test_sources_have_their_own_step():
+    at = AppTest.from_file(APP, default_timeout=30).run()
+    headers = [h.value for h in at.header]
+    assert "3. Quellen und Wettbewerber (optional)" in headers
+    assert headers.index("3. Quellen und Wettbewerber (optional)") < headers.index("4. Chunking prüfen")
+    assert at.text_area(key="source_urls") is not None and at.text_area(key="source_text") is not None

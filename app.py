@@ -373,17 +373,11 @@ def render_stage1() -> None:
             "Die AI-Antwort ist der Maßstab der Analyse. Das Tool zerlegt sie in **Themen** (Überschriften, fette "
             "Einleitungswörter) und **Aussagen** (einzelne Zeilen oder Bullets). Jede Aussage wird später einzeln "
             "mit deinem Content verglichen.\n\n"
-            "Die **Quell-URLs** sind die Seiten, die die AI zitiert. Sie dienen als Benchmark: Pro Aussage siehst "
-            "du, wie weit dein bester Absatz hinter dem besten Absatz der Quellen liegt. Ohne Quellen läuft die "
-            "Analyse trotzdem, der Status zeigt dann nur die relative Stärke innerhalb deines eigenen Contents.\n\n"
             "Tipp: Zeilen entfernen, die nicht zur Antwort gehören, etwa Hinweise wie „KI-Antworten können Fehler "
             "enthalten“ oder Titel von Quellenkarten.")
     keyword = st.text_input("Keyword oder Prompt", value=kept("keyword", ""), key="keyword", placeholder="z. B. dachsanierung kosten")
     answer_text = st.text_area("AI-Antwort (Text aus AI Overview oder AI Mode einfügen)", value=kept("answer", ""),
                              key="answer", height=260)
-    source_urls = parse_urls(st.text_area(
-        "Quell-URLs der AI-Antwort (optional, eine pro Zeile)", value=kept("source_urls", ""), key="source_urls", height=110,
-        help="Die zitierten Quellen dienen als Benchmark. Ohne Quellen läuft die Analyse trotzdem."))
 
     st.header("2. Eigener Content")
     with st.expander("Was passiert in diesem Schritt?"):
@@ -394,9 +388,7 @@ def render_stage1() -> None:
             "Vier Wege: ein **Frog-Export** mit URL- und Content-Spalte (ganze Domain oder Teilbereich), eine "
             "**URL-Liste** für eine Handvoll Seiten, die das Tool selbst lädt, ein **Chunk-Embedding-Export** "
             "aus einem früheren Lauf, damit die Domain nicht noch einmal eingebettet werden muss, oder für einen "
-            "schnellen Test der **eingefügte Text** einer Seite.\n\n"
-            "Optional kannst du den Content der Quell-URLs als Datei im selben Format hochladen, falls sich die "
-            "Seiten nicht laden lassen oder du dieselbe Extraktion wie für deinen Content willst.")
+            "schnellen Test der **eingefügte Text** einer Seite.")
     own_file = st.file_uploader(
         "Screaming-Frog-Export mit URL und Main Content, oder Chunk-Embedding-Export aus einem früheren Lauf",
         type=UPLOAD_TYPES, key="own_upload")
@@ -413,13 +405,28 @@ def render_stage1() -> None:
         help="Für einen schnellen Test ohne Export: den Main Content einer Seite hier einfügen. "
              "Er erscheint in den Ergebnissen als „Eingefügter Text“.").strip()
     pasted_docs = [Document(PASTED_URL, own_text, OWN)] if own_text else []
+
+    st.header("3. Quellen und Wettbewerber (optional)")
+    with st.expander("Was passiert in diesem Schritt?"):
+        st.markdown(
+            "Die **Quellen** sind die Seiten, die die AI zitiert, oder andere Wettbewerber, gegen die du dich messen "
+            "willst. Sie sind der Benchmark: Pro Aussage siehst du, wie weit dein bester Absatz hinter dem besten "
+            "Absatz der Quellen liegt, und daraus entsteht der Status „abgedeckt“, „schwach“ oder „Lücke“.\n\n"
+            "Drei Wege: **URLs** eintragen, die das Tool selbst lädt, einen **Frog-Export** der Quellseiten "
+            "hochladen (dieselbe Extraktion wie für deinen Content, gut für Seiten, die sich nicht laden lassen), "
+            "oder den **Text** einer Quelle einfügen.\n\n"
+            "Ohne Quellen läuft die Analyse trotzdem; der Status zeigt dann nur die relative Stärke innerhalb "
+            "deines eigenen Contents. Quellen, die zu deinem eigenen Content gehören, werden nicht als Benchmark "
+            "gewertet.")
+    source_urls = parse_urls(st.text_area(
+        "Quell-URLs (eine pro Zeile). Das Tool lädt den Content selbst.", value=kept("source_urls", ""),
+        key="source_urls", height=110))
     source_file = st.file_uploader(
-        "Optional: Content der Quell-URLs als Datei (gleiches Format wie der Frog-Export)",
-        type=UPLOAD_TYPES, key="source_upload")
+        "Frog-Export der Quellseiten (URL und Main Content)", type=UPLOAD_TYPES, key="source_upload")
     source_parsed = parse_upload(source_file, SOURCE, "source_parsed", chunks_error=SOURCE_CHUNKS_ERROR)
     show_upload_note(source_parsed, source_file, "source_parsed")
     source_text = st.text_area(
-        "Optional: Quell-Content als Text einfügen (ein Absatz pro Zeile)", value=kept("source_text", ""),
+        "Quell-Content als Text einfügen (ein Absatz pro Zeile)", value=kept("source_text", ""),
         key="source_text", height=120,
         help="Der Main Content einer zitierten Quelle, zum Beispiel aus der Zwischenablage. "
              "Erscheint als „Eingefügte Quelle“.").strip()
@@ -442,7 +449,7 @@ def render_stage1() -> None:
                 provider_name, model)
 
 
-    st.header("3. Chunking prüfen")
+    st.header("4. Chunking prüfen")
     with st.expander("Was passiert in diesem Schritt?"):
         st.markdown(
             "Noch ohne Embedding-Kosten: Das Tool lädt die URLs, zerlegt die AI-Antwort und schneidet deinen Content "
@@ -451,7 +458,7 @@ def render_stage1() -> None:
             "Prüfe hier, ob die Zerlegung der Antwort stimmt und ob die Beispiel-Chunks sinnvolle Absätze sind. "
             "Passt die Chunk-Größe nicht, kannst du sie in der Seitenleiste überschreiben und neu chunken.")
     if not ready:
-        st.caption("Es fehlen noch Keyword, AI-Antwort oder eigener Content.")
+        st.caption("Es fehlen noch Keyword, AI-Antwort oder eigener Content (Schritt 1 und 2).")
     if st.button("Segmentieren und chunken", disabled=not ready, type="primary"):
         failed_own: list = []
         feedback = RunFeedback("Segmentieren und chunken läuft …")
@@ -518,7 +525,7 @@ def render_stage1() -> None:
             st.warning(line)
         st.caption(f"Im nächsten Schritt werden bis zu {prepared.texts_to_embed} Texte eingebettet.")
 
-    st.header("4. Analysieren")
+    st.header("5. Analysieren")
     with st.expander("Was passiert in diesem Schritt?"):
         st.markdown(
             "Alle Texte laufen durch dasselbe Embedding-Modell und werden per Kosinus-Ähnlichkeit verglichen, "
