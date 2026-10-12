@@ -32,7 +32,8 @@ _BULLET = re.compile(r"^\s*(?:[-*•–·▪◦]|\d{1,2}[.)])\s+")
 _MD_HEADING = re.compile(r"^\s*#{1,6}\s+")
 _WHOLE_BOLD = re.compile(r"^\s*(\*\*|__)(.+?)\1\s*:?\s*$")
 _LEAD_IN = re.compile(r"^(?P<label>[^:.!?]{1,80}):\s+(?P<rest>\S.*)$")
-_SENTENCE_END = re.compile(r"[.!?]$")
+_LABEL_ONLY = re.compile(r"^(?P<label>[^:.!?]{1,80}):$")  # "Trockenlegung & Abdichtung:" before sub-items
+_SENTENCE_END = re.compile(r"[.!?:]$")
 
 
 @dataclass
@@ -48,6 +49,8 @@ class _Draft:
     label: str
     texts: list[str] = field(default_factory=list)
     forced: bool = False
+    heading: bool = False  # opened by a heading line; lead-ins inside it are statements, not topics
+    prefix: str = ""  # label of a "Label:" line, carried into the statements that follow it
 
 
 def _parse_lines(text: str) -> list[_Line]:
@@ -70,8 +73,9 @@ def _parse_lines(text: str) -> list[_Line]:
 
 
 def _heading_like(line: _Line) -> bool:
+    """Short, unpunctuated, not a bullet and not a "Label: text" line (that is content, not a heading)."""
     return (not line.bullet and count_words(line.text) <= MAX_HEADING_WORDS
-            and not _SENTENCE_END.search(line.text))
+            and not _SENTENCE_END.search(line.text) and _lead_in(line) is None)
 
 
 def _is_heading(line: _Line, following: Optional[_Line]) -> bool:
@@ -91,23 +95,43 @@ def _lead_in(line: _Line) -> Optional[re.Match]:
     return None
 
 
+def _label_only(line: _Line) -> Optional[str]:
+    match = _LABEL_ONLY.match(line.text)
+    if match and count_words(match["label"]) <= MAX_LEAD_WORDS:
+        return match["label"].strip()
+    return None
+
+
 def _structure_topics(lines: list[_Line]) -> list[_Draft]:
     following = [lines[i + 1] if i + 1 < len(lines) else None for i in range(len(lines))]
     explicit = any(_is_heading(line, following[i]) or _lead_in(line) for i, line in enumerate(lines))
     drafts: list[_Draft] = []
     for i, line in enumerate(lines):
         if _is_heading(line, following[i]):
-            drafts.append(_Draft(line.text.rstrip(":").strip(), forced=line.forced_heading))
+            drafts.append(_Draft(line.text.rstrip(":").strip(), forced=line.forced_heading, heading=True))
             continue
+        under_heading = bool(drafts) and drafts[-1].heading
         lead = _lead_in(line)
         if lead:
-            drafts.append(_Draft(lead["label"].strip(), [lead["rest"].strip()]))
+            if under_heading:  # "Sanierputz: Alter Putz wird ..." is a statement of the heading's topic
+                drafts[-1].prefix = ""
+                drafts[-1].texts.append(f"{lead['label'].strip()}: {lead['rest'].strip()}")
+            else:
+                drafts.append(_Draft(lead["label"].strip(), [lead["rest"].strip()]))
+            continue
+        label = _label_only(line)
+        if label:
+            if under_heading:  # "Trockenlegung & Abdichtung:" labels the sub-items that follow
+                drafts[-1].prefix = label
+            else:
+                drafts.append(_Draft(label))
             continue
         if not drafts:
             drafts.append(_Draft(INTRO_LABEL))
         elif not explicit and line.after_blank and not line.bullet and drafts[-1].texts:
             drafts.append(_Draft(short_label(line.text)))
-        drafts[-1].texts.append(line.text)
+        text = line.text.rstrip(":").strip()
+        drafts[-1].texts.append(f"{drafts[-1].prefix}: {text}" if drafts[-1].prefix else text)
     return _fold_empty(drafts)
 
 

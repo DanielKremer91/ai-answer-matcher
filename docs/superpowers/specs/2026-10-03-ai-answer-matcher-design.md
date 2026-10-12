@@ -87,7 +87,9 @@ Zwei Ebenen: Thema und Aussage.
 
 Eine Überschriftenzeile ohne folgende Aussage (etwa kurze Listenpunkte ohne Satzzeichen) geht nicht verloren: ihr Text wird zur Aussage des vorangehenden Themas.
 
-Text vor der ersten erkannten Grenze bildet das Thema "Einleitung". Aufzählungszeichen und Nummerierungen werden entfernt.
+Text vor der ersten erkannten Grenze bildet das Thema "Einleitung".
+
+Steht eine Überschrift über den Zeilen, sind Zeilen mit Einleitungswort ("Sanierputz: …") Aussagen dieses Themas, nicht eigene Themen; ihr Einleitungswort bleibt Teil des Aussagetexts. Eine Zeile, die nur aus einem Einleitungswort mit Doppelpunkt besteht ("Trockenlegung & Abdichtung:"), wird den folgenden Aussagen als Präfix vorangestellt. Ohne Überschrift darüber öffnen Einleitungswörter wie bisher eigene Themen. Eine Zeile, auf die eine Einleitungswort-Zeile folgt, kann eine Überschrift sein; eine Zeile, die mit Doppelpunkt endet, ist keine Überschrift. Aufzählungszeichen und Nummerierungen werden entfernt.
 
 **Semantischer Fallback.** Wenn der Strukturweg nur ein Thema findet und die Antwort mindestens 6 Sätze hat: Sätze einzeln einbetten, Kosinus benachbarter Sätze berechnen, Grenze dort, wo der Wert unter (Mittelwert − 1 Standardabweichung) fällt. Label ist der erste Satz des Abschnitts, auf 8 Wörter gekürzt. Bei weniger als 6 Sätzen bleibt es bei einem Thema.
 

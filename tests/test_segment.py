@@ -190,3 +190,49 @@ def test_nearly_identical_embeddings_do_not_cause_a_semantic_split():
     answer = segment_answer("kw", text, embed=lambda texts: vectors)
     assert answer.method == "structure"
     assert len(answer.topics) == 1
+
+
+KELLER = """Eine Kellersanierung kostet im Durchschnitt 15.000 bis 30.000 Euro, je nach Zustand des Gebäudes und Umfang der Arbeiten. Die Maßnahmen reichen von einfacher Trockenlegung und Putzarbeiten bis hin zur aufwendigen Außendämmung und Abdichtung.
+
+Wichtige Schritte einer Kellersanierung
+Ursachenanalyse: Ein Bausachverständiger prüft zuerst, ob die Feuchtigkeit durch Kondenswasser, aufsteigende Nässe oder seitlich eindringendes Wasser entsteht.
+Trockenlegung & Abdichtung:
+Bei aufsteigender Feuchtigkeit hilft eine nachträgliche Horizontalsperre (z. B. durch Injektionsverfahren).
+Bei seitlicher Feuchtigkeit wird eine Außenabdichtung (Freilegen und Bitumenanstrich) oder alternativ eine Innenabdichtung vorgenommen.
+Sanierputz: Alter, salz- oder schimmelbelasteter Putz wird abgeschlagen und durch speziellen, atmungsaktiven Sanierputz ersetzt.
+Dämmung: Eine Perimeterdämmung von außen oder eine Innendämmung senkt den Wärmeverlust und beugt Kondenswasser vor.
+
+Kostenübersicht (Richtwerte)
+Bausachverständiger zur Schadensanalyse: ca. 200 Euro
+Wärmedämmung / Innendämmung: ca. 70 bis 100 Euro pro Quadratmeter
+Horizontalsperre per Injektion: ca. 200 Euro pro Quadratmeter bzw. per Mauersägeverfahren 200 bis 250 Euro pro laufendem Meter
+Außenabdichtung und Dämmen: ca. 40 bis 60 Euro pro Quadratmeter (zzgl. Erdaushub)
+Gesamtkosten für ein Haus (ca. 10x10 m Grundfläche): 20.000 bis 30.000 Euro
+"""
+
+
+def test_real_ai_overview_keeps_headings_as_topics_and_lead_ins_as_statements():
+    answer = segment_answer("kellersanierung kosten", KELLER)
+    assert labels(answer) == [INTRO_LABEL, "Wichtige Schritte einer Kellersanierung", "Kostenübersicht (Richtwerte)"]
+    steps = [s.text for s in answer.topics[1].statements]
+    assert steps[0].startswith("Ursachenanalyse: Ein Bausachverständiger prüft")
+    assert steps[1].startswith("Trockenlegung & Abdichtung: Bei aufsteigender Feuchtigkeit")
+    assert steps[2].startswith("Trockenlegung & Abdichtung: Bei seitlicher Feuchtigkeit")
+    assert steps[3].startswith("Sanierputz: Alter")
+    assert steps[4].startswith("Dämmung: Eine Perimeterdämmung")
+    assert len(steps) == 5
+    costs = [s.text for s in answer.topics[2].statements]
+    assert costs[0] == "Bausachverständiger zur Schadensanalyse: ca. 200 Euro"
+    assert costs[-1] == "Gesamtkosten für ein Haus (ca. 10x10 m Grundfläche): 20.000 bis 30.000 Euro"
+    assert len(costs) == 5
+
+
+def test_lead_ins_without_a_heading_above_still_open_topics():
+    answer = segment_answer("kw", "Kosten: Die Sanierung kostet 200 Euro.\nDauer: Sie dauert zwei Wochen.")
+    assert labels(answer) == ["Kosten", "Dauer"]
+
+
+def test_label_only_line_without_heading_opens_a_topic():
+    answer = segment_answer("kw", "Kosten:\nDie Sanierung kostet 200 Euro.\nDauer:\nSie dauert zwei Wochen.")
+    assert labels(answer) == ["Kosten", "Dauer"]
+    assert answer.topics[0].statements[0].text == "Die Sanierung kostet 200 Euro."
