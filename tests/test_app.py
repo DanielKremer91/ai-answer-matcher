@@ -974,3 +974,20 @@ def test_gap_mode_own_upload_can_be_restricted(backend):
     assert not at.exception and not at.error
     frame = at.dataframe[0].value
     assert set(frame["Beste eigene URL"]) == {"https://me.de/blog"}
+
+
+def test_runs_show_a_status_box_that_stays_after_completion(backend):
+    at = chunked(source_file=True)
+    assert [(s.label.split(" (")[0], s.state) for s in at.status] == [("Chunking abgeschlossen", "complete")]
+    button(at, ANALYZE_BUTTON).click()
+    at.run()
+    assert [(s.label.split(" (")[0], s.state) for s in at.status] == [("Analyse abgeschlossen", "complete")]
+
+
+def test_failed_analysis_marks_the_status_box_as_error(monkeypatch):
+    def no_key(*args, **kwargs):
+        raise EmbeddingError("openai: API-Schlüssel fehlt")
+
+    monkeypatch.setattr("aam.embeddings.make_provider", no_key)
+    at = analyzed()
+    assert any(st.state == "error" and st.label == "Abgebrochen" for st in at.status)

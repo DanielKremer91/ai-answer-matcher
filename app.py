@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from pathlib import Path
 
 import httpx
@@ -248,22 +249,47 @@ def show_upload_note(parsed, file, slot: str) -> None:
         st.caption(parsed["note"])
 
 
-def fetch_missing(urls, origin: str, known: set):
+class RunFeedback:
+    """A status box with spinner, step lines and a progress bar; it stays visible after the run."""
+
+    def __init__(self, label: str):
+        self.started = time.time()
+        self.status = st.status(label, expanded=True)
+        self.bar = self.status.progress(0.0, text="Vorbereitung …")
+
+    def step(self, text: str) -> None:
+        self.status.write(text)
+
+    def progress(self, done: int, total: int, what: str) -> None:
+        self.bar.progress(done / max(total, 1), text=f"{what}: {done} von {total}")
+
+    def done(self, label: str) -> None:
+        self.bar.empty()
+        self.status.update(label=f"{label} ({time.time() - self.started:.0f} s)", state="complete", expanded=False)
+
+    def failed(self) -> None:
+        self.bar.empty()
+        self.status.update(label="Abgebrochen", state="error", expanded=True)
+
+
+def fetch_missing(urls, origin: str, known: set, feedback: Optional[RunFeedback] = None):
     """Documents for URLs no uploaded table covers. Pages fetched earlier in the session are reused."""
     wanted = [u for u in urls if url_key(u) not in known]
     todo = [u for u in wanted if (origin, url_key(u)) not in state["fetched"]]
     failed = []
     if todo:
-        bar = st.progress(0.0, text=f"Lade {len(todo)} URLs …")
-        try:
-            with httpx.Client() as client:
-                docs, failed = extract.fetch_documents(
-                    todo, origin, client,
-                    progress=lambda done, total: bar.progress(done / total, text=f"Lade URL {done} von {total} …"))
-        finally:
-            bar.empty()
+        label = "Quell-URLs" if origin == SOURCE else "eigene URLs"
+        if feedback:
+            feedback.step(f"Lade {len(todo)} {label} …")
+        with httpx.Client() as client:
+            docs, failed = extract.fetch_documents(
+                todo, origin, client,
+                progress=lambda done, total: feedback.progress(done, total, "Geladene URLs") if feedback else None)
         for doc in docs:
             state["fetched"][(origin, url_key(doc.url))] = doc
+        if feedback:
+            feedback.step(f"{len(docs)} von {len(todo)} {label} geladen"
+                          + (f", {len(failed)} nicht ladbar" if failed else ""))
     found = [state["fetched"][(origin, url_key(u))] for u in wanted if (origin, url_key(u)) in state["fetched"]]
     return found, list(failed)
 
@@ -428,13 +454,15 @@ def render_stage1() -> None:
         st.caption("Es fehlen noch Keyword, AI-Antwort oder eigener Content.")
     if st.button("Segmentieren und chunken", disabled=not ready, type="primary"):
         failed_own: list = []
+        feedback = RunFeedback("Segmentieren und chunken läuft …")
         try:
             table_own = own_docs_sel + pasted_docs
             fetched_own, failed_own = ([], []) if prechunked else fetch_missing(
-                own_urls, OWN, {url_key(d.url) for d in table_own})
+                own_urls, OWN, {url_key(d.url) for d in table_own}, feedback)
             table_sources = (source_parsed["docs"] if source_parsed else []) + pasted_sources
             fetched_sources, failed_sources = fetch_missing(
-                source_urls, SOURCE, {url_key(d.url) for d in table_sources})
+                source_urls, SOURCE, {url_key(d.url) for d in table_sources}, feedback)
+            feedback.step("Zerlege die AI-Antwort und schneide den Content in Chunks …")
             state["prepared"] = pipeline.prepare(
                 keyword, answer_text,
                 own_docs=pipeline.combine_documents(table_own, fetched_own),
@@ -449,8 +477,10 @@ def render_stage1() -> None:
             state["prepared_sig"] = input_signature()
             state.pop("result", None)
             state.pop("excel", None)  # downloads belong to the previous result
+            feedback.done("Chunking abgeschlossen")
         except RUN_ERRORS as exc:
             state.pop("prepared", None)
+            feedback.failed()
             st.error("\n\n".join([str(exc), *failure_lines(failed_own)]))
 
     prepared = state.get("prepared")
@@ -501,22 +531,21 @@ def render_stage1() -> None:
             "Der Nutzen liegt in den Lücken: Aussagen, zu denen dir eine eigenständige Passage fehlt. Ähnlichkeit "
             "ist nötig, um zitiert zu werden, aber nicht hinreichend. Die Antwort nachzuschreiben ist kein Ziel.")
     if st.button("Analyse starten", disabled=not fresh, type="primary"):
-        bar = None
+        feedback = RunFeedback("Analyse läuft …")
         try:
             provider = make_provider()
-            bar = st.progress(0.0, text="Embeddings werden erstellt …")
+            feedback.step(f"Bette bis zu {prepared.texts_to_embed} Texte mit {provider_name} / {model} ein …")
             state["result"] = pipeline.analyze(
                 prepared, provider, state["cache"], covered_delta=covered_delta, weak_delta=weak_delta,
-                progress=lambda done, total: bar.progress(done / max(total, 1),
-                                                          text=f"Embeddings: {done} von {total} Texten"))
+                progress=lambda done, total: feedback.progress(done, total, "Embeddings"))
+            feedback.step("Berechne Kosinus-Ähnlichkeiten und Status …")
             state["result_sig"] = state["prepared_sig"]
             state.pop("excel", None)  # a new result must not be served with the old download bytes
+            feedback.done("Analyse abgeschlossen")
         except RUN_ERRORS as exc:
             state.pop("result", None)
+            feedback.failed()
             st.error(f"Analyse fehlgeschlagen: {exc}")
-        finally:
-            if bar is not None:
-                bar.empty()
 
     result = state.get("result")
     if result is not None and fresh and state.get("result_sig") == state.get("prepared_sig"):
@@ -690,35 +719,34 @@ def render_gap() -> None:
 
     if st.button("Abschnitte vergleichen", key="gap_button", disabled=not ready, type="primary"):
         failed: list = []
-        bar = None
+        feedback = RunFeedback("Abschnittsvergleich läuft …")
         try:
             table_comp = (comp_parsed["docs"] if comp_parsed else []) + (
                 [Document(PASTED_SOURCE_URL, comp_text, SOURCE)] if comp_text else [])
-            fetched_comp, failed_comp = fetch_missing(comp_urls, SOURCE, {url_key(d.url) for d in table_comp})
+            fetched_comp, failed_comp = fetch_missing(comp_urls, SOURCE, {url_key(d.url) for d in table_comp},
+                                                     feedback)
             table_own = gap_own_docs + (
                 [Document(PASTED_URL, own_text, OWN)] if own_text else [])
-            fetched_own, failed_own = fetch_missing(own_urls, OWN, {url_key(d.url) for d in table_own})
+            fetched_own, failed_own = fetch_missing(own_urls, OWN, {url_key(d.url) for d in table_own}, feedback)
             failed = failed_comp + failed_own
             answer = segment.segment_answer(gap_keyword, gap_answer) if gap_answer.strip() else None
             provider = make_provider()
-            bar = st.progress(0.0, text="Embeddings werden erstellt …")
+            feedback.step(f"Bilde Abschnitte und bette sie mit {provider_name} / {model} ein …")
             state["gap_result"] = gap.analyze_gap(
                 pipeline.combine_documents(table_comp, fetched_comp),
                 pipeline.combine_documents(table_own, fetched_own),
                 lambda texts: embeddings.embed_cached(
                     provider, texts, state["cache"],
-                    progress=lambda done, total: bar.progress(done / max(total, 1),
-                                                              text=f"Embeddings: {done} von {total} Texten")),
+                    progress=lambda done, total: feedback.progress(done, total, "Embeddings")),
                 provider_name, model, answer=answer, keyword=gap_keyword.strip())
             state["gap_sig"] = signature
             state["gap_failed"] = failure_lines(failed)
             state.pop("gap_excel", None)
+            feedback.done("Vergleich abgeschlossen")
         except RUN_ERRORS as exc:
             state.pop("gap_result", None)
+            feedback.failed()
             st.error("\n\n".join([str(exc), *failure_lines(failed)]))
-        finally:
-            if bar is not None:
-                bar.empty()
 
     result = state.get("gap_result")
     if result is None:
