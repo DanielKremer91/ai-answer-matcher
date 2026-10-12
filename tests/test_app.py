@@ -909,3 +909,14 @@ def test_competitor_content_can_be_pasted_in_gap_mode(backend):
     frame = at.dataframe[0].value
     assert set(frame["Wettbewerber-URL"]) == {"Eingefügte Quelle"}
     assert backend.fetched == []
+
+
+def test_split_paragraphs_are_listed_with_a_preview():
+    long_doc = "\n".join(["Satz{i} wort{i}a wort{i}b wort{i}c wort{i}d wort{i}e wort{i}f wort{i}g wort{i}h schluss{i}.".format(i=i) for i in range(1, 9)])
+    at = new_app()
+    at.text_area(key="own_text").input(" ".join(long_doc.split("\n")))  # one 80-word paragraph
+    at.run()
+    button(at, CHUNK_BUTTON).click()
+    at.run()
+    assert not at.exception and not at.error
+    assert any("Eingefügter Text · „Satz1 wort1a" in m.value and "Fenster" in m.value for m in at.markdown)

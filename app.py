@@ -437,8 +437,8 @@ def render_stage1() -> None:
                 st.caption("Diese Absätze waren länger als die doppelte Zielgröße und wurden an Satzgrenzen in "
                            "Fenster geteilt. Jedes Fenster wird einzeln eingebettet, das beste zählt. "
                            "Abschaltbar in der Seitenleiste.")
-                for url, words, windows in split_examples:
-                    st.markdown(f"- {url} · {words} Wörter → {windows} Fenster")
+                for url, words, windows, preview in split_examples:
+                    st.markdown(f"- {url} · „{preview}“ · {words} Wörter → {windows} Fenster")
         st.caption(f"Im nächsten Schritt werden bis zu {prepared.texts_to_embed} Texte eingebettet.")
 
     st.header("4. Analysieren")
