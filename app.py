@@ -466,7 +466,13 @@ def render_stage1() -> None:
             "Prüfe hier, ob die Zerlegung der Antwort stimmt und ob die Beispiel-Chunks sinnvolle Absätze sind. "
             "Passt die Chunk-Größe nicht, kannst du sie in der Seitenleiste überschreiben und neu chunken.")
     if not ready:
-        st.caption("Es fehlen noch Keyword, AI-Antwort oder eigener Content (Schritt 1 und 2).")
+        missing = [name for name, ok in (("Keyword oder Prompt (Schritt 1)", bool(keyword.strip())),
+                                         ("AI-Antwort (Schritt 1)", bool(answer_text.strip())),
+                                         ("eigener Content (Schritt 2)", has_own)) if not ok]
+        if upload_error:
+            missing.append("ein Upload mit Fehler (siehe Meldung oben)")
+        st.caption("Es fehlt noch: " + ", ".join(missing) + ". Hinweis: Streamlit übernimmt Text aus einem "
+                   "Feld erst, wenn du es verlässt (außerhalb klicken) oder Strg/Cmd+Enter drückst.")
     if st.button("Segmentieren und chunken", disabled=not ready, type="primary"):
         failed_own: list = []
         feedback = RunFeedback("Segmentieren und chunken läuft …")

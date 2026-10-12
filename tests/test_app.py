@@ -1029,3 +1029,12 @@ def test_pasted_competitor_in_gap_mode_can_be_named(backend):
     at.run()
     assert not at.exception and not at.error
     assert set(at.dataframe[0].value["Wettbewerber-URL"]) == {"https://www.obi.de/kellersanierung"}
+
+
+def test_readiness_caption_names_what_is_missing():
+    at = AppTest.from_file(APP, default_timeout=30).run()
+    at.text_input(key="keyword").input("kw")
+    at.run()
+    caption = next(c.value for c in at.caption if c.value.startswith("Es fehlt noch"))
+    assert "AI-Antwort (Schritt 1)" in caption and "eigener Content (Schritt 2)" in caption
+    assert "Keyword" not in caption.split(".")[0]
