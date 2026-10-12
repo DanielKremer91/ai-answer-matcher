@@ -103,12 +103,18 @@ with st.sidebar:
             help="Absätze über der doppelten Zielgröße werden an Satzgrenzen in Fenster geteilt, jedes Fenster "
                  "wird einzeln eingebettet, das beste zählt. Aus: lange Absätze bleiben ganz; ihr Vektor ist dann "
                  "ein Durchschnitt über alle Gedanken darin und einzelne Aussagen gehen unter.")
+        st.caption("Status einer Aussage, gemessen am Abstand zwischen deinem besten Chunk und dem besten "
+                   "Quell-Chunk (Kosinus eigen minus Kosinus Quelle):")
         covered_delta = st.slider(
             "Schwelle „abgedeckt“", 0.0, 0.3, kept("covered_delta", 0.05), 0.01, key="covered_delta",
-            help="Der beste eigene Chunk darf höchstens so weit unter dem besten Quell-Chunk liegen.")
+            help="Abgedeckt: Dein bester Chunk liegt höchstens so weit unter dem besten Quell-Chunk. "
+                 "Beispiel bei 0,05: Quelle 0,85, du 0,81 → Abstand 0,04 → abgedeckt.")
         weak_delta = st.slider(
             "Schwelle „schwach“", 0.0, 0.5, kept("weak_delta", 0.15), 0.01, key="weak_delta",
-            help="Bis zu diesem Abstand gilt eine Aussage als schwach abgedeckt, darunter als Lücke.")
+            help="Schwach: Der Abstand liegt zwischen der Schwelle „abgedeckt“ und dieser Schwelle. "
+                 "Lücke: Der Abstand ist größer als diese Schwelle. "
+                 "Beispiel bei 0,05 und 0,15: Quelle 0,85, du 0,75 → Abstand 0,10 → schwach; "
+                 "du 0,60 → Abstand 0,25 → Lücke.")
         if weak_delta < covered_delta:
             st.warning("Die Schwelle „schwach“ liegt unter „abgedeckt“ und wird auf denselben Wert gesetzt.")
             weak_delta = covered_delta
