@@ -625,6 +625,11 @@ def test_gap_mode_with_an_answer_adds_the_next_statement(backend):
     assert not at.exception and not at.error
     frame = at.dataframe[0].value
     assert "Nächste AI-Aussage" in frame.columns and "Kosinus AI-Aussage" in frame.columns
+    assert "Priorität" in frame.columns
+    at.radio(key="gap_order").set_value("Priorität").run()
+    assert not at.exception and not at.error
+    ordered = at.dataframe[0].value
+    assert list(ordered["Priorität"]) == sorted(ordered["Priorität"], reverse=True)
 
 
 def test_gap_mode_reads_competitor_and_own_pages_from_uploads(backend):

@@ -13,7 +13,7 @@ from aam.report import _count, _de, _excel_frame, _frame, _score
 SHEETS = ("Abschnitte", "Protokoll")
 _BASE_COLUMNS = ["Wettbewerber-URL", "Rang", "Abschnitt (Wettbewerber)", "Wörter", "Beste eigene URL",
                  "Eigener Abschnitt", "Wörter eigen", "Kosinus", "Vergleich", "Bestes Fenster"]
-_AI_COLUMNS = ["Nächste AI-Aussage", "Kosinus AI-Aussage"]
+_AI_COLUMNS = ["Nächste AI-Aussage", "Kosinus AI-Aussage", "Priorität"]
 _TEXT_COLUMNS = ["Text Wettbewerber", "Text eigen"]
 
 
@@ -26,11 +26,23 @@ def sections_frame(result: GapResult) -> pd.DataFrame:
             cells = [gap_page.url, row.rank, row.competitor.title, row.competitor.words, row.own.url,
                      row.own.title, row.own.words, _score(row.score), row.method, row.best_window]
             if with_answer:
-                cells += [row.statement.text if row.statement else "", _score(row.statement_score)]
+                # Priority: close to an AI statement, far from your own content. The higher, the
+                # more the competitor's section matters for the answer and the less you cover it.
+                priority = (None if row.statement_score is None
+                            else round(float(row.statement_score) - float(row.score), 4))
+                cells += [row.statement.text if row.statement else "", _score(row.statement_score), priority]
             cells += [row.competitor.text, row.own.text]
             rows.append(cells)
     columns = _BASE_COLUMNS + (_AI_COLUMNS if with_answer else []) + _TEXT_COLUMNS
     return _frame(rows, columns, result.keyword)
+
+
+def priority_frame(result: GapResult) -> pd.DataFrame:
+    """The sections frame ordered by priority (needs an answer); rows without priority last."""
+    frame = sections_frame(result)
+    if "Priorität" not in frame.columns:
+        return frame
+    return frame.sort_values("Priorität", ascending=False, na_position="last", kind="stable").reset_index(drop=True)
 
 
 def _level(level) -> str:

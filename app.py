@@ -524,9 +524,20 @@ def render_gap_result(result) -> None:
         if gap_page.note:
             st.info(gap_page.note if len(pages) == 1 else f"{gap_page.url}: {gap_page.note}")
     st.code("\n".join(gap_report.gap_protocol_lines(result)), language=None, wrap_lines=True)
-    st.caption("Sortiert nach Kosinus, absteigend. Die Zeilen am Ende sind die Kandidaten für Lücken: "
-               "Abschnitte des Wettbewerbers, zu denen dein Content kaum einen Gegenpart hat.")
-    frame = gap_report.sections_frame(result)
+    if result.answer is not None:
+        order = st.radio("Sortierung", ["Kosinus eigen", "Priorität"], horizontal=True, key="gap_order",
+                         help="Priorität = Kosinus zur nächsten AI-Aussage minus dein Kosinus: oben stehen "
+                              "Abschnitte, die für die AI-Antwort zählen und dir fehlen.")
+    else:
+        order = "Kosinus eigen"
+    if order == "Priorität":
+        st.caption("Sortiert nach Priorität, absteigend: nah an einer Aussage der AI-Antwort und weit weg von "
+                   "deinem Content. Das sind die Lücken, die sich zuerst lohnen.")
+        frame = gap_report.priority_frame(result)
+    else:
+        st.caption("Sortiert nach Kosinus, absteigend. Die Zeilen am Ende sind die Kandidaten für Lücken: "
+                   "Abschnitte des Wettbewerbers, zu denen dein Content kaum einen Gegenpart hat.")
+        frame = gap_report.sections_frame(result)
     st.dataframe(frame.drop(columns=GAP_TEXT_COLUMNS), width="stretch", hide_index=True)
     rows = [(gap_page, row) for gap_page in pages for row in gap_page.rows]
     with st.expander("Texte nachlesen"):

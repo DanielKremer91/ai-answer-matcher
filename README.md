@@ -94,6 +94,9 @@ Ganz oben wählst du den Modus. Anbieter, Modell und API-Key in der Seitenleiste
 
 Für den Gap-Modus braucht der Main Content die Überschriften als Markierung (`## H2`, `### H3`). Das Snippet `examples/screaming-frog-main-content.js` für Screaming Frogs Custom JavaScript liefert genau das: ein Absatz pro Zeile, Überschriften mit `##`. Seiten, die das Tool selbst lädt, bringen ihre Überschriften mit. Schon eine einzige H2 teilt die Seite in die Einleitung und diesen Abschnitt. Ohne Überschriften hat eine Seite nur einen Abschnitt, verglichen wird dann die ganze Seite.
 
+
+Mit AI-Antwort bekommt jede Zeile der Gap-Tabelle zusätzlich die nächste Aussage der Antwort, deren Kosinus und eine **Priorität**: Kosinus zur AI-Aussage minus dein Kosinus. Hoch heißt: Der Abschnitt des Wettbewerbers liegt nah an etwas, das die AI-Antwort sagt, und du hast dazu kaum etwas. Die Sortierung „Priorität“ stellt diese Lücken nach oben.
+
 ## Screaming-Frog-Export erstellen
 
 1. In Screaming Frog unter *Configuration → Custom → Custom JavaScript* ein Snippet anlegen und den Code aus `examples/screaming-frog-main-content.js` einfügen. Er liefert den Hauptinhalt der Seite ohne Navigation, Footer und Seitenleisten, jeden Absatz als eigene Zeile und die Überschriften mit `##`, `###` usw. markiert; die Einrichtung steht im Kopf der Datei. Das Tool schneidet daran die Chunks und im Gap-Modus die Abschnitte.

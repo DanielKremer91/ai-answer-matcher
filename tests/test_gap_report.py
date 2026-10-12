@@ -17,7 +17,7 @@ from tests.fakes import ANSWER, bow_vector
 
 BASE = ["Keyword/Prompt", "Wettbewerber-URL", "Rang", "Abschnitt (Wettbewerber)", "Wörter",
         "Beste eigene URL", "Eigener Abschnitt", "Wörter eigen", "Kosinus", "Vergleich", "Bestes Fenster"]
-AI = ["Nächste AI-Aussage", "Kosinus AI-Aussage"]
+AI = ["Nächste AI-Aussage", "Kosinus AI-Aussage", "Priorität"]
 TEXTS = ["Text Wettbewerber", "Text eigen"]
 
 
@@ -217,3 +217,19 @@ def test_vergleich_column_follows_kosinus_and_names_the_method():
     assert frame.set_index("Abschnitt (Wettbewerber)")["Bestes Fenster"]["Kosten"] == ""
     excel = pd.read_excel(io.BytesIO(gap_to_excel(result)), sheet_name="Abschnitte")
     assert "Vergleich" in excel.columns
+
+
+def test_priority_is_ai_closeness_minus_own_coverage():
+    answer = segment_answer("dachsanierung kosten", ANSWER)
+    frame = sections_frame(run(answer=answer, keyword="dachsanierung kosten"))
+    expected = (frame["Kosinus AI-Aussage"] - frame["Kosinus"]).round(4)
+    assert (frame["Priorität"] == expected).all()
+
+
+def test_priority_order_lists_the_relevant_gaps_first():
+    from aam.gap_report import priority_frame
+
+    answer = segment_answer("dachsanierung kosten", ANSWER)
+    frame = priority_frame(run(answer=answer, keyword="dachsanierung kosten"))
+    assert list(frame["Priorität"]) == sorted(frame["Priorität"], reverse=True)
+    assert list(frame.columns)[:3] == ["Keyword/Prompt", "Wettbewerber-URL", "Rang"]
