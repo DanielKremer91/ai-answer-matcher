@@ -6,16 +6,16 @@ import pandas as pd
 
 from aam.match import QUARTILE_LABELS
 from aam.models import SOURCE, Chunk, ChunkStats, FailedUrl, SegmentedAnswer, Statement, Topic
-from aam.report import (KEYWORD_COLUMN, SHEETS, answer_frame, chunks_frame, pages_frame, protocol_frame,
+from aam.report import (KEYWORD_COLUMN, SHEETS, answer_frame, chunks_frame, pages_frame, protocol_frame, statement_pages_frame,
                         protocol_lines, statements_frame, summary, to_excel, topics_frame)
 from tests.fakes import sample_result
 
 KEYWORD = "dachsanierung kosten"
 
 
-def test_excel_has_six_sheets_and_each_starts_with_the_keyword():
+def test_excel_has_seven_sheets_and_each_starts_with_the_keyword():
     sheets = pd.read_excel(io.BytesIO(to_excel(sample_result())), sheet_name=None)
-    assert tuple(sheets) == SHEETS == ("Seiten", "Themen", "Aussagen", "Aussage x Seite", "Chunks", "Protokoll")
+    assert tuple(sheets) == SHEETS == ("Seiten", "Themen", "Aussagen", "Aussage x Seite", "Chunks", "Protokoll", "Erklärung")
     for name, df in sheets.items():
         assert df.columns[0] == KEYWORD_COLUMN == "Keyword/Prompt", name
         assert set(df[KEYWORD_COLUMN]) == {KEYWORD}, name
@@ -337,3 +337,20 @@ def test_overlong_pages_lists_pages_above_the_model_limit():
     assert overlong_pages(texts, "gemini") == [
         "https://me.de/lang: 1300 Wörter, über der Grenze von 1200 Wörtern für gemini → Seitenvektor als Durchschnitt der Chunks"]
     assert overlong_pages(texts, "openai") == []
+
+
+def test_explanation_sheet_covers_every_column_of_every_sheet():
+    from aam.report import explanation_frame
+
+    for result in (sample_result(), sample_result(with_sources=False)):
+        legend = explanation_frame(result)
+        assert list(legend.columns) == ["Keyword/Prompt", "Blatt", "Spalte", "Bedeutung"]
+        explained = {(sheet, column) for sheet, column in zip(legend["Blatt"], legend["Spalte"])}
+        frames = {"Seiten": pages_frame(result), "Themen": topics_frame(result), "Aussagen": statements_frame(result),
+                  "Aussage x Seite": statement_pages_frame(result), "Chunks": chunks_frame(result),
+                  "Protokoll": protocol_frame(result)}
+        for sheet, frame in frames.items():
+            for column in frame.columns:
+                assert (sheet, column) in explained or (sheet, column) == (sheet, "Keyword/Prompt"), (sheet, column)
+        assert ("alle", "Keyword/Prompt") in explained
+        assert all(len(text) > 15 for text in legend["Bedeutung"])

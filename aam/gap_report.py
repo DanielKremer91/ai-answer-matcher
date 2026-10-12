@@ -10,7 +10,7 @@ import pandas as pd
 from aam.gap import GapResult
 from aam.report import _count, _de, _excel_frame, _frame, _score
 
-SHEETS = ("Abschnitte", "Protokoll")
+SHEETS = ("Abschnitte", "Protokoll", "Erklärung")
 _BASE_COLUMNS = ["Wettbewerber-URL", "Rang", "Abschnitt (Wettbewerber)", "Wörter", "Beste eigene URL",
                  "Eigener Abschnitt", "Wörter eigen", "Kosinus", "Vergleich", "Bestes Fenster"]
 _AI_COLUMNS = ["Nächste AI-Aussage", "Kosinus AI-Aussage", "Priorität"]
@@ -88,9 +88,37 @@ def _protocol_frame(result: GapResult) -> pd.DataFrame:
     return _frame(rows, ["Angabe", "Wert"], result.keyword)
 
 
+GAP_COLUMN_EXPLANATIONS = {
+    ("alle", "Keyword/Prompt"): "Das Keyword oder der Prompt der AI-Antwort, falls eine eingegeben wurde; sonst leer.",
+    ("Abschnitte", "Wettbewerber-URL"): "Die Wettbewerber-Seite; bei eingefügtem Text die Bezeichnung, die du eingetragen hast.",
+    ("Abschnitte", "Rang"): "Platz des Wettbewerber-Abschnitts in der Liste, nach Kosinus absteigend; die letzten Plätze sind die Kandidaten für Lücken.",
+    ("Abschnitte", "Abschnitt (Wettbewerber)"): "Überschrift des Abschnitts auf der Wettbewerber-Seite; ein Abschnitt reicht von einer Überschrift bis zur nächsten derselben Ebene.",
+    ("Abschnitte", "Wörter"): "Länge des Wettbewerber-Abschnitts in Wörtern.",
+    ("Abschnitte", "Beste eigene URL"): "Deine Seite, deren Abschnitt dem Wettbewerber-Abschnitt am nächsten liegt.",
+    ("Abschnitte", "Eigener Abschnitt"): "Überschrift dieses eigenen Abschnitts.",
+    ("Abschnitte", "Wörter eigen"): "Länge des eigenen Abschnitts in Wörtern.",
+    ("Abschnitte", "Kosinus"): "Ähnlichkeit zwischen beiden Abschnitten, 0 bis 1. Hoch = Thema vorhanden, niedrig = Thema fehlt wahrscheinlich. Absolute Werte hängen vom Modell ab.",
+    ("Abschnitte", "Vergleich"): "„Ganztext“ = beide Abschnitte als Ganzes verglichen. „Fenster aus …“ = ein Abschnitt war mehr als viermal so lang wie der andere; der längere wurde in Fenster geteilt, das beste Fenster zählt.",
+    ("Abschnitte", "Bestes Fenster"): "Text des besten Fensters, wenn gefenstert wurde; sonst leer.",
+    ("Abschnitte", "Nächste AI-Aussage"): "Die Aussage der AI-Antwort, die diesem Wettbewerber-Abschnitt am nächsten liegt.",
+    ("Abschnitte", "Kosinus AI-Aussage"): "Ähnlichkeit zwischen Wettbewerber-Abschnitt und dieser AI-Aussage: Zählt der Abschnitt für die AI-Antwort?",
+    ("Abschnitte", "Priorität"): "Kosinus AI-Aussage minus Kosinus: hoch = nah an der AI-Antwort und weit weg von deinem Content, also eine Lücke, die sich zuerst lohnt.",
+    ("Abschnitte", "Text Wettbewerber"): "Volltext des Wettbewerber-Abschnitts.",
+    ("Abschnitte", "Text eigen"): "Volltext des eigenen Abschnitts.",
+    ("Protokoll", "Angabe"): "Name des Protokolleintrags.",
+    ("Protokoll", "Wert"): "Datum, Anbieter, Modell und pro Seite Abschnittsebene, Anzahl Abschnitte, Wörter und Ganztext-Wert.",
+}
+
+
+def gap_explanation_frame(result: GapResult) -> pd.DataFrame:
+    rows = [(sheet, column, meaning) for (sheet, column), meaning in GAP_COLUMN_EXPLANATIONS.items()]
+    return _frame(rows, ["Blatt", "Spalte", "Bedeutung"], result.keyword)
+
+
 def gap_to_excel(result: GapResult) -> bytes:
     buffer = io.BytesIO()
+    frames = (sections_frame(result), _protocol_frame(result), gap_explanation_frame(result))
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        for name, frame in zip(SHEETS, (sections_frame(result), _protocol_frame(result))):
+        for name, frame in zip(SHEETS, frames):
             _excel_frame(frame).to_excel(writer, sheet_name=name, index=False)
     return buffer.getvalue()

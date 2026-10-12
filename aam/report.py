@@ -12,7 +12,7 @@ from aam.match import MIN_STATEMENTS_FOR_QUARTILES, STATUS_COVERED, STATUS_GAP
 from aam.models import OWN, SOURCE, ChunkStats, FailedUrl, Result, SegmentedAnswer
 
 KEYWORD_COLUMN = "Keyword/Prompt"
-SHEETS = ("Seiten", "Themen", "Aussagen", "Aussage x Seite", "Chunks", "Protokoll")
+SHEETS = ("Seiten", "Themen", "Aussagen", "Aussage x Seite", "Chunks", "Protokoll", "Erklärung")
 MATRIX_MAX_PAGES = 15  # more pages than this do not fit a readable matrix
 ORIGIN_LABELS = {OWN: "eigen", SOURCE: "Quelle"}
 METHOD_LABELS = {"structure": "Struktur", "semantic": "semantisch"}
@@ -260,9 +260,75 @@ def summary(result: Result) -> str:
     return f"{text} Lücken: {', '.join(parts)}."
 
 
+# Column explanations for the sheet "Erklärung". "alle" marks columns that appear on every sheet.
+_SCORE_NOTE = ("Kosinus-Ähnlichkeit der Embeddings, 0 bis 1. Absolute Werte hängen vom Modell ab; "
+               "vergleiche nur Werte aus demselben Lauf.")
+COLUMN_EXPLANATIONS = {
+    ("alle", "Keyword/Prompt"): "Das Keyword oder der Prompt dieses Laufs, damit sich Exporte mehrerer Läufe zuordnen lassen.",
+    ("Seiten", "Rang"): "Platz der Seite im Ranking nach Seitenscore; eigene Seiten und Quellen gemischt.",
+    ("Seiten", "URL"): "Adresse der Seite; bei eingefügtem Text die Bezeichnung, die du eingetragen hast.",
+    ("Seiten", "Herkunft"): "„eigen“ = dein Content, „Quelle“ = zitierte Quelle oder Wettbewerber.",
+    ("Seiten", "Seitenscore"): "Ganze AI-Antwort gegen ganze Seite: " + _SCORE_NOTE + " Beantwortet „Passt die Seite insgesamt zum Thema?“.",
+    ("Seiten", "Bester Chunk Score"): "Höchster Kosinus irgendeines Chunks dieser Seite zu irgendeiner Aussage der AI-Antwort: die beste einzelne Passage.",
+    ("Seiten", "Aussagen abgedeckt"): "Anzahl Aussagen, bei denen der beste Chunk dieser Seite höchstens die Schwelle „abgedeckt“ unter dem besten Quell-Chunk liegt.",
+    ("Seiten", "Aussagen mit bestem Chunk"): "Ohne Quellen: Anzahl Aussagen, bei denen diese Seite den besten Chunk der ganzen Domain stellt.",
+    ("Seiten", "Aussagen gesamt"): "Anzahl Aussagen, in die die AI-Antwort zerlegt wurde.",
+    ("Seiten", "Seitenvektor"): "„komplett“ = der ganze Seitentext wurde als ein Embedding berechnet; „Durchschnitt der Chunks“ = Text zu lang für das Modell oder aus einem Chunk-Export, dann wortgewichteter Mittelwert der Chunk-Vektoren.",
+    ("Themen", "Thema"): "Themengebiet der AI-Antwort, erkannt an Überschriften oder Einleitungswörtern; „Einleitung“ = Text vor der ersten Überschrift.",
+    ("Themen", "Anzahl Aussagen"): "Wie viele Aussagen der AI-Antwort zu diesem Thema gehören.",
+    ("Themen", "Beste eigene URL"): "Deine Seite mit dem Chunk, der dem Themen-Vektor (Mittelwert seiner Aussagen) am nächsten liegt.",
+    ("Themen", "Bester eigener Chunk"): "Text dieses Chunks.",
+    ("Themen", "Score"): "Kosinus zwischen Themen-Vektor und deinem besten Chunk. " + _SCORE_NOTE,
+    ("Themen", "Beste Quell-URL"): "Quelle mit dem Chunk, der dem Themen-Vektor am nächsten liegt.",
+    ("Themen", "Bester Quell-Chunk"): "Text dieses Quell-Chunks.",
+    ("Themen", "Score Quelle"): "Kosinus zwischen Themen-Vektor und bestem Quell-Chunk.",
+    ("Themen", "Delta"): "Score minus Score Quelle: negativ heißt, die Quelle liegt näher am Thema als du.",
+    ("Themen", "abgedeckt"): "Anzahl Aussagen dieses Themas mit Status „abgedeckt“ (Delta ≥ −Schwelle abgedeckt).",
+    ("Themen", "schwach"): "Anzahl Aussagen dieses Themas mit Status „schwach“ (Delta zwischen den beiden Schwellen); ohne Quellen: unterstes Viertel der eigenen Scores.",
+    ("Themen", "Lücke"): "Anzahl Aussagen dieses Themas mit Status „Lücke“ (Delta unter −Schwelle schwach).",
+    ("Themen", "stark"): "Ohne Quellen: Anzahl Aussagen im obersten Viertel der eigenen Scores.",
+    ("Themen", "über Durchschnitt"): "Ohne Quellen: Anzahl Aussagen zwischen Median und oberstem Viertel.",
+    ("Themen", "unter Durchschnitt"): "Ohne Quellen: Anzahl Aussagen zwischen unterstem Viertel und Median.",
+    ("Aussagen", "Thema"): "Thema, zu dem die Aussage gehört.",
+    ("Aussagen", "Aussage (AI-Chunk)"): "Eine Aussage der AI-Antwort: eine Zeile, ein Bullet oder ein Satz; die Einheit, die Google aus einer Quelle zieht.",
+    ("Aussagen", "Wortzahl"): "Länge der Aussage in Wörtern; der Median aller Aussagen bestimmt die Chunk-Größe.",
+    ("Aussagen", "Beste eigene URL"): "Deine Seite mit dem Chunk, der dieser Aussage am nächsten liegt.",
+    ("Aussagen", "Bester eigener Chunk"): "Text dieses Chunks.",
+    ("Aussagen", "Score"): "Kosinus zwischen Aussage und deinem besten Chunk. " + _SCORE_NOTE,
+    ("Aussagen", "Beste Quell-URL"): "Quelle mit dem Chunk, der dieser Aussage am nächsten liegt; vermutlich die Stelle, aus der die AI die Aussage gezogen hat.",
+    ("Aussagen", "Bester Quell-Chunk"): "Text dieses Quell-Chunks.",
+    ("Aussagen", "Score Quelle"): "Kosinus zwischen Aussage und bestem Quell-Chunk.",
+    ("Aussagen", "Delta"): "Score minus Score Quelle: wie weit dein bester Absatz hinter dem besten Absatz der Quellen liegt.",
+    ("Aussagen", "Nähe zum Quell-Chunk"): "Kosinus zwischen deinem besten Chunk und dem besten Quell-Chunk derselben Aussage: sagen beide dasselbe?",
+    ("Aussagen", "Status"): "Mit Quellen: „abgedeckt“, „schwach“ oder „Lücke“ nach den Schwellen aus der Seitenleiste. Ohne Quellen: „stark“, „über Durchschnitt“, „unter Durchschnitt“, „schwach“ nach Vierteln der eigenen Scores; leer bei weniger als 4 Aussagen.",
+    ("Aussage x Seite", "Thema"): "Thema, zu dem die Aussage gehört.",
+    ("Aussage x Seite", "Aussage (AI-Chunk)"): "Die Aussage der AI-Antwort.",
+    ("Aussage x Seite", "Rang"): "Platz der Seite für diese Aussage, nach Bester Chunk Score; pro Aussage die zehn besten eigenen Seiten und alle Quellen.",
+    ("Aussage x Seite", "URL"): "Adresse der Seite, die mit dieser Aussage verglichen wurde.",
+    ("Aussage x Seite", "Herkunft"): "„eigen“ oder „Quelle“.",
+    ("Aussage x Seite", "Bester Chunk Score"): "Höchster Kosinus eines Chunks dieser Seite zur Aussage: Gibt es auf der Seite eine passende Passage?",
+    ("Aussage x Seite", "Seiten-Relevanz"): "Kosinus zwischen Aussage und Seitenvektor: Passt die Seite als Ganzes zum Thema der Aussage? Relatives Signal, Seiten mit vielen Themen schneiden schlechter ab.",
+    ("Aussage x Seite", "Bester Chunk"): "Text des besten Chunks dieser Seite für die Aussage.",
+    ("Chunks", "Herkunft"): "„AI-Antwort“ = Aussage der Antwort, „eigen“ = Chunk deines Contents, „Quelle“ = Chunk einer Quelle.",
+    ("Chunks", "URL"): "Seite, aus der der Chunk stammt; leer bei Aussagen der AI-Antwort.",
+    ("Chunks", "Chunk-Index"): "Laufende Nummer des Chunks innerhalb der Seite, in Lesereihenfolge.",
+    ("Chunks", "Text"): "Der Text, der eingebettet wurde.",
+    ("Chunks", "Wortzahl"): "Länge des Chunks in Wörtern.",
+    ("Protokoll", "Angabe"): "Name der Einstellung oder des Protokolleintrags.",
+    ("Protokoll", "Wert"): "Datum, Anbieter, Modell, Dimension, Zielgröße, Schwellen, Chunk-Statistik, nicht geladene URLs und Hinweise dieses Laufs.",
+}
+
+
+def explanation_frame(result: Result) -> pd.DataFrame:
+    """One row per column of the other sheets: which sheet, which column, what it means."""
+    rows = [(sheet, column, meaning) for (sheet, column), meaning in COLUMN_EXPLANATIONS.items()]
+    return _frame(rows, ["Blatt", "Spalte", "Bedeutung"], result.meta.keyword)
+
+
 def to_excel(result: Result) -> bytes:
     frames = (pages_frame(result), topics_frame(result), statements_frame(result),
-              statement_pages_frame(result), chunks_frame(result), protocol_frame(result))
+              statement_pages_frame(result), chunks_frame(result), protocol_frame(result),
+              explanation_frame(result))
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         for name, frame in zip(SHEETS, frames):

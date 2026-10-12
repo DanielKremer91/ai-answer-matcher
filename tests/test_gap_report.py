@@ -83,7 +83,7 @@ def test_sorting_is_kept_and_values_are_rounded():
 def test_excel_has_two_sheets_with_keyword_first():
     data = gap_to_excel(run(keyword="k"))
     sheets = pd.read_excel(io.BytesIO(data), sheet_name=None)
-    assert list(sheets) == ["Abschnitte", "Protokoll"]
+    assert list(sheets) == ["Abschnitte", "Protokoll", "Erklärung"]
     assert sheets["Abschnitte"].columns[0] == "Keyword/Prompt"
     assert sheets["Protokoll"].columns[0] == "Keyword/Prompt"
     assert list(sheets["Protokoll"].columns[1:]) == ["Angabe", "Wert"]
@@ -233,3 +233,17 @@ def test_priority_order_lists_the_relevant_gaps_first():
     frame = priority_frame(run(answer=answer, keyword="dachsanierung kosten"))
     assert list(frame["Priorität"]) == sorted(frame["Priorität"], reverse=True)
     assert list(frame.columns)[:3] == ["Keyword/Prompt", "Wettbewerber-URL", "Rang"]
+
+
+def test_gap_excel_has_an_explanation_sheet_covering_every_column():
+    from aam.gap_report import gap_explanation_frame
+
+    answer = segment_answer("dachsanierung kosten", ANSWER)
+    result = run(answer=answer, keyword="dachsanierung kosten")
+    sheets = pd.read_excel(io.BytesIO(gap_to_excel(result)), sheet_name=None)
+    assert list(sheets) == ["Abschnitte", "Protokoll", "Erklärung"]
+    legend = gap_explanation_frame(result)
+    explained = {(sheet, column) for sheet, column in zip(legend["Blatt"], legend["Spalte"])}
+    for column in sections_frame(result).columns:
+        assert ("Abschnitte", column) in explained or column == "Keyword/Prompt", column
+    assert ("Protokoll", "Angabe") in explained and ("Protokoll", "Wert") in explained
