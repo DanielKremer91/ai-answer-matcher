@@ -151,7 +151,7 @@ Hoher Chunk Score bei niedriger Seiten-Relevanz heißt: Die passende Passage ste
 
 Status mit Quellen: **abgedeckt** (dein Chunk liegt höchstens 0,05 unter dem besten Quell-Chunk), **schwach** (bis 0,15 darunter), **Lücke** (mehr als 0,15 darunter). Beide Schwellen sind in der Seitenleiste einstellbar.
 
-Das Excel enthält zusätzlich alle Chunks, ein Protokoll und ein Blatt „Erklärung“, das jede Spalte jedes Blatts beschreibt; ebenso das Excel des Gap-Modus. Das Protokoll umfasst mit Datum, Modell, Chunk-Größe und nicht geladenen URLs. In jedem Blatt steht das Keyword in der ersten Spalte.
+Das Excel enthält zusätzlich alle Chunks, ein Protokoll und ein Blatt „Erklärung“, das jede Spalte jedes Blatts beschreibt; ebenso das Excel des Gap-Modus. Das Protokoll umfasst Datum, Modell, Chunk-Größe und nicht geladene URLs. In jedem Blatt steht das Keyword in der ersten Spalte.
 
 ## Domain einmal einbetten, für viele Keywords nutzen
 
