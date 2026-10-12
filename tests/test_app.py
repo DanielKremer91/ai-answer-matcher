@@ -938,3 +938,39 @@ def test_step_three_warns_about_pages_too_long_for_the_model(backend):
     at.run()
     assert not at.exception and not at.error
     assert any("über der Grenze von 5000 Wörtern" in w.value for w in at.warning)
+
+
+def test_upload_urls_can_be_restricted_to_a_selection(backend):
+    at = start()
+    at.multiselect(key="own_url_filter").set_value(["https://me.de/kosten"]).run()
+    button(at, CHUNK_BUTTON).click()
+    at.run()
+    assert not at.exception and not at.error
+    assert "Eigener Content: 1 Seite" in at.code[0].value
+    button(at, ANALYZE_BUTTON).click()
+    at.run()
+    assert [p.url for p in at.session_state["result"].match.pages] == ["https://me.de/kosten"]
+
+
+def test_url_selection_is_offered_only_for_uploads_with_several_pages(backend):
+    at = start()
+    assert any(m.key == "own_url_filter" for m in at.multiselect)
+    single = new_app()
+    single.file_uploader(key="own_upload").set_value(("frog.csv", table_csv(OWN_DOCS[:1]), "text/csv"))
+    single.run()
+    assert not any(m.key == "own_url_filter" for m in single.multiselect)
+
+
+def test_gap_mode_own_upload_can_be_restricted(backend):
+    at = set_mode(AppTest.from_file(APP, default_timeout=30).run(), MODE_3)
+    at.file_uploader(key="gap_competitor_upload").set_value(
+        ("wettbewerb.csv", table_csv([headed(d) for d in SOURCE_DOCS]), "text/csv"))
+    at.file_uploader(key="gap_own_upload").set_value(
+        ("frog.csv", table_csv([headed(d) for d in OWN_DOCS]), "text/csv"))
+    at.run()
+    at.multiselect(key="gap_own_url_filter").set_value(["https://me.de/blog"]).run()
+    button(at, "Abschnitte vergleichen").click()
+    at.run()
+    assert not at.exception and not at.error
+    frame = at.dataframe[0].value
+    assert set(frame["Beste eigene URL"]) == {"https://me.de/blog"}

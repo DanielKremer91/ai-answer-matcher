@@ -8,6 +8,7 @@ from pathlib import Path
 
 import httpx
 import streamlit as st
+from typing import Optional
 
 from aam import compare, embeddings, extract, gap, gap_report, pipeline, report, segment
 from aam.cache import MemoryCache
@@ -45,10 +46,10 @@ MODE_STAGE1, MODE_MANUAL, MODE_GAP = "AI-Antwort gegen Content", "Absatz gegen T
 MODE_KEYS = {
     MODE_STAGE1: ("keyword", "answer", "source_urls", "own_urls", "own_text",
                   "target_override", "merge_short", "split_long", "covered_delta", "weak_delta",
-                  "content_factor", "source_text"),
+                  "content_factor", "source_text", "own_url_filter"),
     MODE_MANUAL: ("manual_short", "manual_long"),
     MODE_GAP: ("gap_competitor_urls", "gap_competitor_text", "gap_own_urls", "gap_own_text", "gap_keyword",
-               "gap_answer"),
+               "gap_answer", "gap_own_url_filter"),
 }
 COPY_PREFIX = "kept_"
 
@@ -207,6 +208,34 @@ def parse_upload(file, origin: str, slot: str, *, chunks_error: str = ""):
     return parsed
 
 
+def url_filter(parsed, key: str) -> Optional[set]:
+    """Multiselect over the URLs of a parsed upload; None (no selection) means every URL."""
+    if not parsed or parsed["error"]:
+        return None
+    urls = ([c.url for c in parsed["chunks"]] if parsed["chunks"] is not None else [d.url for d in parsed["docs"]])
+    options = list(dict.fromkeys(urls))
+    if len(options) < 2:
+        return None
+    chosen = st.multiselect("Nur diese URLs aus dem Upload verwenden (leer = alle)", options,
+                            default=[u for u in kept(key, []) if u in options], key=key,
+                            help="Den Export der ganzen Domain hochladen und hier die Seiten wählen, die in "
+                                 "diese Analyse eingehen sollen.")
+    return set(chosen) or None
+
+
+def filtered(parsed, selected: Optional[set]):
+    """The upload's documents and chunks, restricted to the selected URLs."""
+    if not parsed:
+        return [], None, None
+    docs = parsed["docs"]
+    chunks = parsed["chunks"]
+    if selected is not None:
+        docs = [d for d in docs if d.url in selected]
+        chunks = [c for c in chunks if c.url in selected] if chunks is not None else None
+    return docs, chunks, parsed["stored_target"]
+
+
+
 def show_upload_note(parsed, file, slot: str) -> None:
     if parsed is None:
         return
@@ -347,6 +376,8 @@ def render_stage1() -> None:
         type=UPLOAD_TYPES, key="own_upload")
     own_parsed = parse_upload(own_file, OWN, "own_parsed")
     show_upload_note(own_parsed, own_file, "own_parsed")
+    own_selected = url_filter(own_parsed, "own_url_filter")
+    own_docs_sel, own_chunks_sel, own_stored_target = filtered(own_parsed, own_selected)
     own_urls = parse_urls(st.text_area(
         "Eigene URLs (optional, eine pro Zeile). Das Tool lädt den Content selbst.",
         value=kept("own_urls", ""), key="own_urls", height=110))
@@ -372,14 +403,15 @@ def render_stage1() -> None:
     if prechunked and (own_urls or pasted_docs):
         st.info("Mit einem Chunk-Embedding-Export werden eigene URLs und eingefügter Text nicht zusätzlich verwendet.")
     upload_error = any(p is not None and p["error"] for p in (own_parsed, source_parsed))
-    has_own = prechunked or bool(own_parsed and own_parsed["docs"]) or bool(own_urls) or bool(pasted_docs)
+    has_own = (prechunked and bool(own_chunks_sel)) or bool(own_docs_sel) or bool(own_urls) or bool(pasted_docs)
     ready = bool(keyword.strip() and answer_text.strip() and has_own and not upload_error)
 
 
     def input_signature() -> tuple:
         """Everything the chunking depends on; a change makes the prepared state stale."""
         return (keyword.strip(), answer_text.strip(), tuple(source_urls), tuple(own_urls), own_text,
-                own_parsed["sig"] if own_parsed else None, source_parsed["sig"] if source_parsed else None,
+                own_parsed["sig"] if own_parsed else None, tuple(sorted(own_selected)) if own_selected else None,
+                source_parsed["sig"] if source_parsed else None,
                 int(target_override), merge_short, split_long, round(content_factor, 2), source_text,
                 provider_name, model)
 
@@ -397,7 +429,7 @@ def render_stage1() -> None:
     if st.button("Segmentieren und chunken", disabled=not ready, type="primary"):
         failed_own: list = []
         try:
-            table_own = (own_parsed["docs"] if own_parsed else []) + pasted_docs
+            table_own = own_docs_sel + pasted_docs
             fetched_own, failed_own = ([], []) if prechunked else fetch_missing(
                 own_urls, OWN, {url_key(d.url) for d in table_own})
             table_sources = (source_parsed["docs"] if source_parsed else []) + pasted_sources
@@ -407,8 +439,8 @@ def render_stage1() -> None:
                 keyword, answer_text,
                 own_docs=pipeline.combine_documents(table_own, fetched_own),
                 source_docs=pipeline.combine_documents(table_sources, fetched_sources),
-                own_chunks=own_parsed["chunks"] if prechunked else None,
-                stored_target=own_parsed["stored_target"] if prechunked else None,
+                own_chunks=own_chunks_sel if prechunked else None,
+                stored_target=own_stored_target if prechunked else None,
                 failed=failed_own + failed_sources,
                 target_override=int(target_override) or None, content_factor=content_factor,
                 embed=fallback_embed(),
@@ -631,6 +663,8 @@ def render_gap() -> None:
                                 type=UPLOAD_TYPES, key="gap_own_upload")
     own_parsed = parse_upload(own_file, OWN, "gap_own_parsed", chunks_error=GAP_CHUNKS_ERROR)
     show_upload_note(own_parsed, own_file, "gap_own_parsed")
+    gap_own_selected = url_filter(own_parsed, "gap_own_url_filter")
+    gap_own_docs, _, _ = filtered(own_parsed, gap_own_selected)
     own_urls = parse_urls(st.text_area("Eigene URLs (eine pro Zeile)", value=kept("gap_own_urls", ""),
                                   key="gap_own_urls", height=110))
     own_text = st.text_area("Eigenen Content als Text einfügen (optional, ein Absatz pro Zeile, Überschriften "
@@ -644,13 +678,14 @@ def render_gap() -> None:
 
     upload_error = any(p is not None and p["error"] for p in (comp_parsed, own_parsed))
     has_competitors = bool(comp_urls or comp_text or (comp_parsed and comp_parsed["docs"]))
-    has_own = bool(own_urls or own_text or (own_parsed and own_parsed["docs"]))
+    has_own = bool(own_urls or own_text or gap_own_docs)
     ready = has_competitors and has_own and not upload_error
     if not ready:
         st.caption("Es fehlen noch Wettbewerber-Seiten oder eigener Content.")
 
     signature = (tuple(comp_urls), comp_text, tuple(own_urls), own_text, gap_keyword.strip(), gap_answer.strip(),
                  comp_parsed["sig"] if comp_parsed else None, own_parsed["sig"] if own_parsed else None,
+                 tuple(sorted(gap_own_selected)) if gap_own_selected else None,
                  provider_name, model)
 
     if st.button("Abschnitte vergleichen", key="gap_button", disabled=not ready, type="primary"):
@@ -660,7 +695,7 @@ def render_gap() -> None:
             table_comp = (comp_parsed["docs"] if comp_parsed else []) + (
                 [Document(PASTED_SOURCE_URL, comp_text, SOURCE)] if comp_text else [])
             fetched_comp, failed_comp = fetch_missing(comp_urls, SOURCE, {url_key(d.url) for d in table_comp})
-            table_own = (own_parsed["docs"] if own_parsed else []) + (
+            table_own = gap_own_docs + (
                 [Document(PASTED_URL, own_text, OWN)] if own_text else [])
             fetched_own, failed_own = fetch_missing(own_urls, OWN, {url_key(d.url) for d in table_own})
             failed = failed_comp + failed_own
