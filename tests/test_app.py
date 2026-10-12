@@ -382,7 +382,7 @@ def test_own_content_can_be_pasted_as_text(backend):
     at.run()
     assert not at.exception and not at.error
     pages = at.session_state["result"].match.pages
-    assert [p.url for p in pages] == ["Eingefügter Text"]
+    assert [p.url for p in pages] == ["Eigener Text (eingefügt)"]
     assert backend.fetched == []
 
 
@@ -655,7 +655,7 @@ def test_gap_mode_accepts_pasted_own_text(backend):
     button(at, "Abschnitte vergleichen").click()
     at.run()
     assert not at.exception and not at.error
-    assert set(at.dataframe[0].value["Beste eigene URL"]) == {"Eingefügter Text"}
+    assert set(at.dataframe[0].value["Beste eigene URL"]) == {"Eigener Text (eingefügt)"}
 
 
 def test_gap_mode_button_needs_competitor_and_own_pages(backend):
@@ -894,7 +894,7 @@ def test_source_content_can_be_pasted_as_text(backend):
     assert not at.exception and not at.error
     result = at.session_state["result"]
     assert result.match.has_sources is True
-    assert any(p.url == "Eingefügte Quelle" for p in result.match.pages)
+    assert any(p.url == "Quelle (eingefügt)" for p in result.match.pages)
     assert backend.fetched == []
 
 
@@ -907,7 +907,7 @@ def test_competitor_content_can_be_pasted_in_gap_mode(backend):
     at.run()
     assert not at.exception and not at.error
     frame = at.dataframe[0].value
-    assert set(frame["Wettbewerber-URL"]) == {"Eingefügte Quelle"}
+    assert set(frame["Wettbewerber-URL"]) == {"Quelle (eingefügt)"}
     assert backend.fetched == []
 
 
@@ -919,7 +919,7 @@ def test_split_paragraphs_are_listed_with_a_preview():
     button(at, CHUNK_BUTTON).click()
     at.run()
     assert not at.exception and not at.error
-    assert any("Eingefügter Text · „Satz1 wort1a" in m.value and "Fenster" in m.value for m in at.markdown)
+    assert any("Eigener Text (eingefügt) · „Satz1 wort1a" in m.value and "Fenster" in m.value for m in at.markdown)
 
 
 def test_mode_switch_shows_an_info_text_for_the_chosen_mode():
@@ -999,3 +999,33 @@ def test_sources_have_their_own_step():
     assert "3. Quellen und Wettbewerber (optional)" in headers
     assert headers.index("3. Quellen und Wettbewerber (optional)") < headers.index("4. Chunking prüfen")
     assert at.text_area(key="source_urls") is not None and at.text_area(key="source_text") is not None
+
+
+def test_pasted_texts_can_be_named(backend):
+    at = new_app()
+    at.text_area(key="own_text").input(OWN_DOCS[0].text)
+    at.text_area(key="source_text").input(SOURCE_DOCS[0].text)
+    at.run()
+    at.text_input(key="own_label").input("meine-seite.de/kosten")
+    at.text_input(key="source_label").input("obi.de Kellersanierung")
+    at.run()
+    button(at, CHUNK_BUTTON).click()
+    at.run()
+    button(at, ANALYZE_BUTTON).click()
+    at.run()
+    assert not at.exception and not at.error
+    urls = {p.url for p in at.session_state["result"].match.pages}
+    assert urls == {"meine-seite.de/kosten", "obi.de Kellersanierung"}
+
+
+def test_pasted_competitor_in_gap_mode_can_be_named(backend):
+    at = set_mode(AppTest.from_file(APP, default_timeout=30).run(), MODE_3)
+    at.text_area(key="gap_competitor_text").input("## Förderung\n" + SOURCE_DOCS[0].text)
+    at.text_area(key="gap_own_text").input("## Kosten\n" + OWN_DOCS[0].text)
+    at.run()
+    at.text_input(key="gap_competitor_label").input("https://www.obi.de/kellersanierung")
+    at.run()
+    button(at, "Abschnitte vergleichen").click()
+    at.run()
+    assert not at.exception and not at.error
+    assert set(at.dataframe[0].value["Wettbewerber-URL"]) == {"https://www.obi.de/kellersanierung"}

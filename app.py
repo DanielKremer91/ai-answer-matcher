@@ -19,8 +19,15 @@ from aam.ingest.tables import describe_table_info, read_table_info
 from aam.ingest.urls import parse_urls, url_key
 from aam.models import OWN, SOURCE, Document
 
-PASTED_URL = "Eingefügter Text"  # stands in for the URL of pasted own content
-PASTED_SOURCE_URL = "Eingefügte Quelle"  # same for pasted source / competitor content
+PASTED_URL = "Eigener Text (eingefügt)"  # default name of pasted own content when no label is given
+PASTED_SOURCE_URL = "Quelle (eingefügt)"  # same for pasted source / competitor content
+
+
+def pasted_label(key: str, default: str, what: str) -> str:
+    """A short name or URL for pasted text; it appears wherever the tool shows a URL."""
+    value = st.text_input(f"Bezeichnung oder URL für den eingefügten {what}", value=kept(key, ""), key=key,
+                          placeholder="z. B. obi.de Kellersanierung oder https://…").strip()
+    return value or default
 
 UPLOAD_TYPES = ["csv", "tsv", "txt", "xlsx", "xlsm"]
 KEY_ENV = {"openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
@@ -47,10 +54,10 @@ MODE_STAGE1, MODE_MANUAL, MODE_GAP = "AI-Antwort gegen Content", "Absatz gegen T
 MODE_KEYS = {
     MODE_STAGE1: ("keyword", "answer", "source_urls", "own_urls", "own_text",
                   "target_override", "merge_short", "split_long", "covered_delta", "weak_delta",
-                  "content_factor", "source_text", "own_url_filter"),
+                  "content_factor", "source_text", "own_url_filter", "own_label", "source_label"),
     MODE_MANUAL: ("manual_short", "manual_long"),
     MODE_GAP: ("gap_competitor_urls", "gap_competitor_text", "gap_own_urls", "gap_own_text", "gap_keyword",
-               "gap_answer", "gap_own_url_filter"),
+               "gap_answer", "gap_own_url_filter", "gap_competitor_label", "gap_own_label"),
 }
 COPY_PREFIX = "kept_"
 
@@ -402,9 +409,9 @@ def render_stage1() -> None:
     own_text = st.text_area(
         "Eigenen Content als Text einfügen (optional, ein Absatz pro Zeile)", value=kept("own_text", ""),
         key="own_text", height=160,
-        help="Für einen schnellen Test ohne Export: den Main Content einer Seite hier einfügen. "
-             "Er erscheint in den Ergebnissen als „Eingefügter Text“.").strip()
-    pasted_docs = [Document(PASTED_URL, own_text, OWN)] if own_text else []
+        help="Für einen schnellen Test ohne Export: den Main Content einer Seite hier einfügen.").strip()
+    own_label = pasted_label("own_label", PASTED_URL, "eigenen Text") if own_text else PASTED_URL
+    pasted_docs = [Document(own_label, own_text, OWN)] if own_text else []
 
     st.header("3. Quellen und Wettbewerber (optional)")
     with st.expander("Was passiert in diesem Schritt?"):
@@ -428,9 +435,9 @@ def render_stage1() -> None:
     source_text = st.text_area(
         "Quell-Content als Text einfügen (ein Absatz pro Zeile)", value=kept("source_text", ""),
         key="source_text", height=120,
-        help="Der Main Content einer zitierten Quelle, zum Beispiel aus der Zwischenablage. "
-             "Erscheint als „Eingefügte Quelle“.").strip()
-    pasted_sources = [Document(PASTED_SOURCE_URL, source_text, SOURCE)] if source_text else []
+        help="Der Main Content einer zitierten Quelle, zum Beispiel aus der Zwischenablage.").strip()
+    source_label = pasted_label("source_label", PASTED_SOURCE_URL, "Quell-Text") if source_text else PASTED_SOURCE_URL
+    pasted_sources = [Document(source_label, source_text, SOURCE)] if source_text else []
 
     prechunked = bool(own_parsed and own_parsed["chunks"] is not None)
     if prechunked and (own_urls or pasted_docs):
@@ -442,7 +449,8 @@ def render_stage1() -> None:
 
     def input_signature() -> tuple:
         """Everything the chunking depends on; a change makes the prepared state stale."""
-        return (keyword.strip(), answer_text.strip(), tuple(source_urls), tuple(own_urls), own_text,
+        return (keyword.strip(), answer_text.strip(), tuple(source_urls), tuple(own_urls), own_text, own_label,
+                source_label,
                 own_parsed["sig"] if own_parsed else None, tuple(sorted(own_selected)) if own_selected else None,
                 source_parsed["sig"] if source_parsed else None,
                 int(target_override), merge_short, split_long, round(content_factor, 2), source_text,
@@ -693,6 +701,8 @@ def render_gap() -> None:
     comp_text = st.text_area("Wettbewerber-Content als Text einfügen (optional, ein Absatz pro Zeile, "
                              "Überschriften als „## Überschrift“)", value=kept("gap_competitor_text", ""),
                              key="gap_competitor_text", height=160).strip()
+    comp_label = (pasted_label("gap_competitor_label", PASTED_SOURCE_URL, "Wettbewerber-Text") if comp_text
+                  else PASTED_SOURCE_URL)
 
     st.subheader("Eigener Content")
     own_file = st.file_uploader("Screaming-Frog-Export deiner Seiten (URL und Main Content)",
@@ -706,6 +716,7 @@ def render_gap() -> None:
     own_text = st.text_area("Eigenen Content als Text einfügen (optional, ein Absatz pro Zeile, Überschriften "
                             "als „## Überschrift“)", value=kept("gap_own_text", ""), key="gap_own_text",
                             height=160).strip()
+    gap_own_label = pasted_label("gap_own_label", PASTED_URL, "eigenen Text") if own_text else PASTED_URL
 
     st.subheader("AI-Antwort (optional)")
     gap_keyword = st.text_input("Keyword oder Prompt", value=kept("gap_keyword", ""), key="gap_keyword")
@@ -719,7 +730,8 @@ def render_gap() -> None:
     if not ready:
         st.caption("Es fehlen noch Wettbewerber-Seiten oder eigener Content.")
 
-    signature = (tuple(comp_urls), comp_text, tuple(own_urls), own_text, gap_keyword.strip(), gap_answer.strip(),
+    signature = (tuple(comp_urls), comp_text, comp_label, tuple(own_urls), own_text, gap_own_label,
+                 gap_keyword.strip(), gap_answer.strip(),
                  comp_parsed["sig"] if comp_parsed else None, own_parsed["sig"] if own_parsed else None,
                  tuple(sorted(gap_own_selected)) if gap_own_selected else None,
                  provider_name, model)
@@ -729,11 +741,11 @@ def render_gap() -> None:
         feedback = RunFeedback("Abschnittsvergleich läuft …")
         try:
             table_comp = (comp_parsed["docs"] if comp_parsed else []) + (
-                [Document(PASTED_SOURCE_URL, comp_text, SOURCE)] if comp_text else [])
+                [Document(comp_label, comp_text, SOURCE)] if comp_text else [])
             fetched_comp, failed_comp = fetch_missing(comp_urls, SOURCE, {url_key(d.url) for d in table_comp},
                                                      feedback)
             table_own = gap_own_docs + (
-                [Document(PASTED_URL, own_text, OWN)] if own_text else [])
+                [Document(gap_own_label, own_text, OWN)] if own_text else [])
             fetched_own, failed_own = fetch_missing(own_urls, OWN, {url_key(d.url) for d in table_own}, feedback)
             failed = failed_comp + failed_own
             answer = segment.segment_answer(gap_keyword, gap_answer) if gap_answer.strip() else None
