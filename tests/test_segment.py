@@ -236,3 +236,10 @@ def test_label_only_line_without_heading_opens_a_topic():
     answer = segment_answer("kw", "Kosten:\nDie Sanierung kostet 200 Euro.\nDauer:\nSie dauert zwei Wochen.")
     assert labels(answer) == ["Kosten", "Dauer"]
     assert answer.topics[0].statements[0].text == "Die Sanierung kostet 200 Euro."
+
+
+def test_content_factor_scales_the_target_but_not_the_median():
+    answer = segment_answer("kw", ANSWER, content_factor=1.5)
+    assert answer.median_words == 12.0 and answer.target_words == 18 and answer.content_factor == 1.5
+    assert derive_target([20, 30], 2.0) == (50, 25.0)
+    assert derive_target([5, 5, 6], 1.5) == (15, 5.0)  # still clamped

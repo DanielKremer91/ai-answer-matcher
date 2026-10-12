@@ -309,3 +309,12 @@ def test_protocol_frame_reports_how_page_vectors_were_built():
     df = protocol_frame(sample_result())
     values = dict(zip(df["Angabe"], df["Wert"]))
     assert values["Seitenvektoren"] == "3 Seiten komplett eingebettet, 0 als Durchschnitt ihrer Chunks"
+
+
+def test_protocol_line_shows_the_content_factor():
+    from aam.segment import segment_answer
+    from tests.fakes import ANSWER
+    result = sample_result()
+    answer = segment_answer("dachsanierung kosten", ANSWER, content_factor=1.5)
+    line = protocol_lines(answer, result.own_stats, result.source_stats, [])[0]
+    assert "Median 12 Wörter × 1,5 → Zielgröße 18 Wörter" in line

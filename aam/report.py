@@ -181,7 +181,9 @@ def protocol_lines(answer: SegmentedAnswer, own_stats: ChunkStats, source_stats:
     lines = [
         f"AI-Antwort: {_count(len(answer.topics), 'Thema', 'Themen')}, "
         f"{_count(len(answer.statements), 'Aussage', 'Aussagen')}, "
-        f"Median {_words(answer.median_words)} → Zielgröße {_words(answer.target_words)} "
+        f"Median {_words(answer.median_words)}"
+        + (f" × {_de(answer.content_factor, 1)}" if answer.content_factor != 1.0 else "")
+        + f" → Zielgröße {_words(answer.target_words)} "
         f"(Segmentierung: {METHOD_LABELS[answer.method]})",
         _prechunked_line(own_stats) if prechunked else _stats_line("Eigener Content", own_stats),
     ]

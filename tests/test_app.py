@@ -114,12 +114,12 @@ def test_chunking_step_shows_protocol_ai_chunks_and_embedding_count(backend):
     at = chunked(source_file=True)
     assert not at.exception and not at.error
     protocol = at.code[0].value
-    assert "AI-Antwort: 3 Themen, 5 Aussagen" in protocol and "Zielgröße 15 Wörter" in protocol
+    assert "AI-Antwort: 3 Themen, 5 Aussagen" in protocol and "Median 12 Wörter × 1,5 → Zielgröße 18 Wörter" in protocol
     assert "Eigener Content: 2 Seiten → 3 Chunks" in protocol
-    assert "Quellen: 1 Seite → 2 Chunks" in protocol
+    assert "Quellen: 1 Seite → 1 Chunk" in protocol  # target 18: the two short source paragraphs merge
     frame = at.dataframe[0].value
     assert list(frame.columns) == ["Thema", "Aussage", "Wortzahl"] and len(frame) == 5
-    assert any("bis zu 10 Texte" in c.value for c in at.caption)
+    assert any("bis zu 11 Texte" in c.value for c in at.caption)
     assert backend.calls == 0 and backend.fetched == []
     assert button(at, ANALYZE_BUTTON).disabled is False
 
@@ -879,3 +879,33 @@ def test_mode_switches_do_not_log_the_session_state_write_warning(caplog, monkey
     assert not at.exception
     assert not [r for r in caplog.records if "Session State API" in r.getMessage()]
     assert at.sidebar.checkbox(key="merge_short").value is False
+
+
+def test_source_content_can_be_pasted_as_text(backend):
+    at = start()
+    at.text_area(key="source_text").input(SOURCE_DOCS[0].text)
+    at.run()
+    button(at, CHUNK_BUTTON).click()
+    at.run()
+    assert not at.exception and not at.error
+    assert "Quellen: 1 Seite" in at.code[0].value
+    button(at, ANALYZE_BUTTON).click()
+    at.run()
+    assert not at.exception and not at.error
+    result = at.session_state["result"]
+    assert result.match.has_sources is True
+    assert any(p.url == "Eingefügte Quelle" for p in result.match.pages)
+    assert backend.fetched == []
+
+
+def test_competitor_content_can_be_pasted_in_gap_mode(backend):
+    at = set_mode(AppTest.from_file(APP, default_timeout=30).run(), MODE_3)
+    at.text_area(key="gap_competitor_text").input("## Förderung\n" + SOURCE_DOCS[0].text)
+    at.text_area(key="gap_own_text").input("## Kosten\n" + OWN_DOCS[0].text)
+    at.run()
+    button(at, "Abschnitte vergleichen").click()
+    at.run()
+    assert not at.exception and not at.error
+    frame = at.dataframe[0].value
+    assert set(frame["Wettbewerber-URL"]) == {"Eingefügte Quelle"}
+    assert backend.fetched == []

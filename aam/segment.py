@@ -179,14 +179,19 @@ def _semantic_topics(sentences: list[str], embed: Embed) -> Optional[list[_Draft
     return [_Draft(short_label(group[0]), group) for group in groups]
 
 
-def derive_target(word_counts: list[int]) -> tuple[int, float]:
-    """Chunk target size (median, clamped to MIN_TARGET..MAX_TARGET) and the raw median."""
+def derive_target(word_counts: list[int], content_factor: float = 1.0) -> tuple[int, float]:
+    """Chunk target size and the raw median of the statement lengths.
+
+    Website text carries more words per fact than a condensed AI statement (examples, transitions,
+    reading flow), so the content chunks may be `content_factor` times the statement median. The
+    result is clamped to MIN_TARGET..MAX_TARGET.
+    """
     median = float(statistics.median(word_counts))
-    return int(min(MAX_TARGET, max(MIN_TARGET, round(median)))), median
+    return int(min(MAX_TARGET, max(MIN_TARGET, round(median * content_factor)))), median
 
 
 def segment_answer(keyword: str, text: str, *, target_override: Optional[int] = None,
-                   embed: Optional[Embed] = None) -> SegmentedAnswer:
+                   embed: Optional[Embed] = None, content_factor: float = 1.0) -> SegmentedAnswer:
     drafts = [_Draft(d.label, _split_long(d.texts)) for d in _structure_topics(_parse_lines(text))]
     if not drafts:
         raise ValueError("Die AI-Antwort enthält keine erkennbare Aussage.")
@@ -205,6 +210,6 @@ def segment_answer(keyword: str, text: str, *, target_override: Optional[int] = 
             statements.append(Statement(next_id, topic_id, statement_text, count_words(statement_text)))
             next_id += 1
         topics.append(Topic(topic_id, draft.label, tuple(statements)))
-    derived, median = derive_target([s.words for t in topics for s in t.statements])
+    derived, median = derive_target([s.words for t in topics for s in t.statements], content_factor)
     target = int(target_override) if target_override else derived
-    return SegmentedAnswer(keyword.strip(), tuple(topics), target, median, method)
+    return SegmentedAnswer(keyword.strip(), tuple(topics), target, median, method, content_factor)

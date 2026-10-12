@@ -18,6 +18,7 @@ from aam.ingest.urls import parse_urls, url_key
 from aam.models import OWN, SOURCE, Document
 
 PASTED_URL = "Eingefügter Text"  # stands in for the URL of pasted own content
+PASTED_SOURCE_URL = "Eingefügte Quelle"  # same for pasted source / competitor content
 
 UPLOAD_TYPES = ["csv", "tsv", "txt", "xlsx", "xlsm"]
 KEY_ENV = {"openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
@@ -43,9 +44,11 @@ MODE_STAGE1, MODE_MANUAL, MODE_GAP = "AI-Antwort gegen Content", "Absatz gegen T
 # at the end of each run (`remember_inputs`) and read back as the widget's `value=` when it is rendered again.
 MODE_KEYS = {
     MODE_STAGE1: ("keyword", "answer", "source_urls", "own_urls", "own_text",
-                  "target_override", "merge_short", "split_long", "covered_delta", "weak_delta"),
+                  "target_override", "merge_short", "split_long", "covered_delta", "weak_delta",
+                  "content_factor", "source_text"),
     MODE_MANUAL: ("manual_short", "manual_long"),
-    MODE_GAP: ("gap_competitor_urls", "gap_own_urls", "gap_own_text", "gap_keyword", "gap_answer"),
+    MODE_GAP: ("gap_competitor_urls", "gap_competitor_text", "gap_own_urls", "gap_own_text", "gap_keyword",
+               "gap_answer"),
 }
 COPY_PREFIX = "kept_"
 
@@ -91,6 +94,11 @@ with st.sidebar:
             st.caption(f"Noch kein Key vorhanden ({env_name}).")
     if mode == MODE_STAGE1:
         st.divider()
+        content_factor = st.slider(
+            "Chunk-Faktor (Content zu Aussage)", 1.0, 3.0, kept("content_factor", 1.5), 0.1, key="content_factor",
+            help="Website-Text braucht für denselben Sachverhalt mehr Wörter als eine verdichtete AI-Aussage. "
+                 "Die Chunk-Zielgröße ist der Median der Aussagenlänge mal diesem Faktor. "
+                 "1,0 = gleiche Größe, 1,5 = anderthalbfach (Standard).")
         target_override = st.number_input(
             "Chunk-Zielgröße in Wörtern (0 = aus der AI-Antwort ableiten)",
             min_value=0, max_value=300, value=kept("target_override", 0), step=1, key="target_override")
@@ -120,6 +128,7 @@ with st.sidebar:
             weak_delta = covered_delta
     else:  # not shown in the other modes; stage-1 values stay unused there
         target_override, merge_short, split_long, covered_delta, weak_delta = 0, True, True, 0.05, 0.15
+        content_factor = 1.5
 
 
 # ---------------------------------------------------------------- helpers
@@ -339,6 +348,12 @@ def render_stage1() -> None:
         type=UPLOAD_TYPES, key="source_upload")
     source_parsed = parse_upload(source_file, SOURCE, "source_parsed", chunks_error=SOURCE_CHUNKS_ERROR)
     show_upload_note(source_parsed, source_file, "source_parsed")
+    source_text = st.text_area(
+        "Optional: Quell-Content als Text einfügen (ein Absatz pro Zeile)", value=kept("source_text", ""),
+        key="source_text", height=120,
+        help="Der Main Content einer zitierten Quelle, zum Beispiel aus der Zwischenablage. "
+             "Erscheint als „Eingefügte Quelle“.").strip()
+    pasted_sources = [Document(PASTED_SOURCE_URL, source_text, SOURCE)] if source_text else []
 
     prechunked = bool(own_parsed and own_parsed["chunks"] is not None)
     if prechunked and (own_urls or pasted_docs):
@@ -352,7 +367,8 @@ def render_stage1() -> None:
         """Everything the chunking depends on; a change makes the prepared state stale."""
         return (keyword.strip(), answer_text.strip(), tuple(source_urls), tuple(own_urls), own_text,
                 own_parsed["sig"] if own_parsed else None, source_parsed["sig"] if source_parsed else None,
-                int(target_override), merge_short, split_long, provider_name, model)
+                int(target_override), merge_short, split_long, round(content_factor, 2), source_text,
+                provider_name, model)
 
 
     st.header("3. Chunking prüfen")
@@ -371,7 +387,7 @@ def render_stage1() -> None:
             table_own = (own_parsed["docs"] if own_parsed else []) + pasted_docs
             fetched_own, failed_own = ([], []) if prechunked else fetch_missing(
                 own_urls, OWN, {url_key(d.url) for d in table_own})
-            table_sources = source_parsed["docs"] if source_parsed else []
+            table_sources = (source_parsed["docs"] if source_parsed else []) + pasted_sources
             fetched_sources, failed_sources = fetch_missing(
                 source_urls, SOURCE, {url_key(d.url) for d in table_sources})
             state["prepared"] = pipeline.prepare(
@@ -381,7 +397,7 @@ def render_stage1() -> None:
                 own_chunks=own_parsed["chunks"] if prechunked else None,
                 stored_target=own_parsed["stored_target"] if prechunked else None,
                 failed=failed_own + failed_sources,
-                target_override=int(target_override) or None,
+                target_override=int(target_override) or None, content_factor=content_factor,
                 embed=fallback_embed(),
                 merge_short=merge_short, split_long=split_long,
             )
@@ -591,6 +607,10 @@ def render_gap() -> None:
                                         value=kept("gap_competitor_urls", ""), key="gap_competitor_urls",
                                         height=110))
 
+    comp_text = st.text_area("Wettbewerber-Content als Text einfügen (optional, ein Absatz pro Zeile, "
+                             "Überschriften als „## Überschrift“)", value=kept("gap_competitor_text", ""),
+                             key="gap_competitor_text", height=160).strip()
+
     st.subheader("Eigener Content")
     own_file = st.file_uploader("Screaming-Frog-Export deiner Seiten (URL und Main Content)",
                                 type=UPLOAD_TYPES, key="gap_own_upload")
@@ -608,13 +628,13 @@ def render_gap() -> None:
                               help="Mit Antwort bekommt jede Zeile die nächste Aussage der Antwort und deren Kosinus.")
 
     upload_error = any(p is not None and p["error"] for p in (comp_parsed, own_parsed))
-    has_competitors = bool(comp_urls or (comp_parsed and comp_parsed["docs"]))
+    has_competitors = bool(comp_urls or comp_text or (comp_parsed and comp_parsed["docs"]))
     has_own = bool(own_urls or own_text or (own_parsed and own_parsed["docs"]))
     ready = has_competitors and has_own and not upload_error
     if not ready:
         st.caption("Es fehlen noch Wettbewerber-Seiten oder eigener Content.")
 
-    signature = (tuple(comp_urls), tuple(own_urls), own_text, gap_keyword.strip(), gap_answer.strip(),
+    signature = (tuple(comp_urls), comp_text, tuple(own_urls), own_text, gap_keyword.strip(), gap_answer.strip(),
                  comp_parsed["sig"] if comp_parsed else None, own_parsed["sig"] if own_parsed else None,
                  provider_name, model)
 
@@ -622,7 +642,8 @@ def render_gap() -> None:
         failed: list = []
         bar = None
         try:
-            table_comp = comp_parsed["docs"] if comp_parsed else []
+            table_comp = (comp_parsed["docs"] if comp_parsed else []) + (
+                [Document(PASTED_SOURCE_URL, comp_text, SOURCE)] if comp_text else [])
             fetched_comp, failed_comp = fetch_missing(comp_urls, SOURCE, {url_key(d.url) for d in table_comp})
             table_own = (own_parsed["docs"] if own_parsed else []) + (
                 [Document(PASTED_URL, own_text, OWN)] if own_text else [])

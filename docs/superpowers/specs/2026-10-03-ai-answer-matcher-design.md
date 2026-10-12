@@ -95,7 +95,7 @@ Steht eine Überschrift über den Zeilen, sind Zeilen mit Einleitungswort ("Sani
 
 **Aussagen.** Innerhalb eines Themas ist jede nichtleere Zeile eine Aussage. Zeilen über 60 Wörter werden an Satzgrenzen geteilt. Satztrennung per regulärem Ausdruck mit Schutz für gängige deutsche Abkürzungen (`z. B.`, `ca.`, `bzw.`, `Nr.`, `usw.`, Ordinalzahlen).
 
-**Zielgröße.** Median der Wortzahl aller Aussagen, begrenzt auf 15 bis 80. Der Nutzer kann sie überschreiben.
+**Zielgröße.** Median der Wortzahl aller Aussagen mal dem Chunk-Faktor (Seitenleiste, Standard 1,5, weil Website-Text für denselben Sachverhalt mehr Wörter braucht als eine verdichtete Aussage), begrenzt auf 15 bis 80. Der Nutzer kann sie überschreiben.
 
 ## 6. Chunking (`aam.chunk`)
 

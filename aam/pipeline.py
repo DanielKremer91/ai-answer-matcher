@@ -63,12 +63,13 @@ def prepare(keyword: str, answer_text: str, *, own_docs: Sequence[Document] = ()
             source_docs: Sequence[Document] = (), own_chunks: Optional[Sequence[Chunk]] = None,
             stored_target: Optional[int] = None, failed: Sequence[FailedUrl] = (),
             target_override: Optional[int] = None, embed: Optional[Embed] = None,
-            merge_short: bool = True, split_long: bool = True) -> Prepared:
+            merge_short: bool = True, split_long: bool = True, content_factor: float = 1.0) -> Prepared:
     if not keyword.strip():
         raise ValueError("Bitte ein Keyword oder einen Prompt eintragen.")
     if not answer_text.strip():
         raise ValueError("Bitte die AI-Antwort einfügen.")
-    answer = segment_answer(keyword, answer_text, target_override=target_override, embed=embed)
+    answer = segment_answer(keyword, answer_text, target_override=target_override, embed=embed,
+                            content_factor=content_factor)
     warnings: list[str] = []
     source_target = answer.target_words
     if own_chunks is not None:
