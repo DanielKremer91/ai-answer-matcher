@@ -17,6 +17,7 @@ from tests.fakes import ANSWER, bow_vector
 
 BASE = ["Keyword/Prompt", "Wettbewerber-URL", "Rang", "Abschnitt (Wettbewerber)", "Wörter",
         "Beste eigene URL", "Eigener Abschnitt", "Wörter eigen", "Kosinus", "Vergleich", "Bestes Fenster"]
+VERDICT = ["Aussagen", "abgedeckt", "schwach", "Lücke", "Urteil"]
 AI = ["Nächste AI-Aussage", "Kosinus AI-Aussage", "Kosinus AI-Aussage (ganzer Abschnitt)", "Priorität"]
 TEXTS = ["Text Wettbewerber", "Text eigen"]
 
@@ -37,6 +38,12 @@ def embed(texts):
 KOSTEN, FOERDERUNG, GARANTIE = words("kosten", 12), words("foerder", 12), words("garantie", 12)
 
 
+def sentence(prefix: str, n: int) -> str:
+    ws = [f"{prefix}{i}" for i in range(n)]
+    ws[0] = ws[0].capitalize()
+    return " ".join(ws) + "."
+
+
 def competitor(url="https://wett.de/a"):
     return page(url, SOURCE, ("Kosten", KOSTEN), ("Förderung", FOERDERUNG), ("Garantie", GARANTIE))
 
@@ -53,7 +60,7 @@ def run(comps=None, owns=None, **kwargs):
 
 def test_columns_without_answer():
     frame = sections_frame(run())
-    assert list(frame.columns) == BASE + TEXTS
+    assert list(frame.columns) == BASE + VERDICT + TEXTS
     assert len(frame) == 3
     assert (frame["Keyword/Prompt"] == "").all()
 
@@ -61,7 +68,7 @@ def test_columns_without_answer():
 def test_columns_with_answer_and_keyword():
     answer = segment_answer("dachsanierung kosten", ANSWER)
     frame = sections_frame(run(answer=answer, keyword="dachsanierung kosten"))
-    assert list(frame.columns) == BASE + AI + TEXTS
+    assert list(frame.columns) == BASE + VERDICT + AI + TEXTS
     assert (frame["Keyword/Prompt"] == "dachsanierung kosten").all()
     assert frame["Nächste AI-Aussage"].map(bool).all()
     assert frame["Kosinus AI-Aussage"].notna().all()
@@ -83,8 +90,8 @@ def test_sorting_is_kept_and_values_are_rounded():
 def test_excel_has_two_sheets_with_keyword_first():
     data = gap_to_excel(run(keyword="k"))
     sheets = pd.read_excel(io.BytesIO(data), sheet_name=None)
-    assert list(sheets) == ["Abschnitte", "Protokoll", "Erklärung"]
-    assert sheets["Abschnitte"].columns[0] == "Keyword/Prompt"
+    assert list(sheets) == ["Abschnitte", "Aussagen", "Protokoll", "Erklärung"]
+    assert sheets["Abschnitte"].columns[0] == "Keyword/Prompt" and sheets["Aussagen"].columns[0] == "Keyword/Prompt"
     assert sheets["Protokoll"].columns[0] == "Keyword/Prompt"
     assert list(sheets["Protokoll"].columns[1:]) == ["Angabe", "Wert"]
     protocol = sheets["Protokoll"]
@@ -106,8 +113,10 @@ def test_protocol_lines_wording_for_two_and_one_sections():
     score = f"{result.pages[0].page_score:.2f}".replace(".", ",")
     assert lines[0] == (f"https://wett.de/a: Abschnittsebene H2, 2 Abschnitte, 24 Wörter, "
                         f"Ganztext-Wert {score} gegen https://me.de/a")
-    assert lines[-1] == "Eigene Seite https://me.de/a: Abschnittsebene H2, 2 Abschnitte"
-    assert len(lines) == 2
+    assert lines[-2] == "Eigene Seite https://me.de/a: Abschnittsebene H2, 2 Abschnitte"
+    assert lines[-1].startswith("Aussagen-Ebene: Chunk-Zielgröße 30 Wörter, ") and lines[-1].endswith(
+        "Schwellen abgedeckt 0,05, schwach 0,15")
+    assert len(lines) == 3
 
     single = Document("https://wett.de/b", "Erster Absatz über Kosten.\nZweiter Absatz.", SOURCE)
     one_own = page("https://me.de/b", OWN, ("Nur", words("nur", 12)))
@@ -115,7 +124,7 @@ def test_protocol_lines_wording_for_two_and_one_sections():
     assert lines[0].startswith("https://wett.de/b: Abschnittsebene keine, 1 Abschnitt, 6 Wörter, Ganztext-Wert ")
     assert lines[1] == "Die Seite hat nur einen Abschnitt. Verglichen wird die ganze Seite."
     assert lines[2] == "Eigene Seite https://me.de/b: Abschnittsebene H2, 1 Abschnitt"
-    assert len(lines) == 3
+    assert lines[3].startswith("Aussagen-Ebene:") and len(lines) == 4
 
 
 def test_protocol_sheet_lists_the_lines():
@@ -130,7 +139,7 @@ def with_scores(result, scores, **page_changes):
     """The first page of `result` with its rows cut or reused to carry exactly these scores."""
     gap_page = result.pages[0]
     rows = [replace(gap_page.rows[i % len(gap_page.rows)], score=score, rank=i + 1) for i, score in enumerate(scores)]
-    return replace(result, pages=[replace(gap_page, rows=rows, **page_changes)])
+    return replace(result, pages=[replace(gap_page, rows=rows, **page_changes)], statements=[])
 
 
 def test_summary_without_rows_is_empty():
@@ -139,13 +148,33 @@ def test_summary_without_rows_is_empty():
     assert gap_summary(replace(result, pages=[])) == ""
 
 
-def test_summary_wording():
-    result = run()
+def test_summary_without_statements_falls_back_to_the_section_hint():
+    result = replace(run(), statements=[])
     scores = sorted(r.score for r in result.pages[0].rows)
     low, median, high = (f"{v:.2f}".replace(".", ",") for v in (scores[0], scores[1], scores[2]))
     assert gap_summary(result) == (
         f"https://wett.de/a: 3 Abschnitte, Kosinus von {low} bis {high}. Die untere Hälfte der Liste "
         f"(Kosinus unter {median}) zuerst prüfen, dort stehen die Kandidaten für Lücken.")
+
+
+def test_summary_names_verdicts_in_reading_order():
+    result = run()  # the competitor's Garantie section has no counterpart in the own page
+    text = gap_summary(result)
+    first, *rest = text.split("  \n")
+    assert first == "https://wett.de/a: 3 Abschnitte, 3 Aussagen."
+    assert rest[0].startswith("Themenlücken, zuerst prüfen: **Garantie** (1 von 1 Aussagen ohne Gegenpart)")
+    assert rest[-1].startswith("Abgedeckt: ") and "Kosten" in rest[-1] and "Förderung" in rest[-1]
+
+
+def test_summary_lists_detail_gaps_with_the_missing_statements():
+    comp = page("https://wett.de/a", SOURCE, ("Kosten", "\n".join([KOSTEN + ".", sentence("kosten", 12),
+                                                                     sentence("garantie", 12)])))
+    owns = page("https://me.de/a", OWN, ("Kosten", "\n".join([KOSTEN + ".", sentence("kosten", 12)])))
+    result = run(comps=[comp], owns=[owns], statement_target=12)  # 12-word lines stay separate chunks
+    v = result.pages[0].rows[0].verdict
+    assert (v.total, v.gaps) == (3, 1) and v.verdict == "Detaillücken"
+    text = gap_summary(result)
+    assert "Detaillücken: **Kosten** (1 von 3): „Garantie0 garantie1" in text
 
 
 def test_summary_for_two_sections():
@@ -168,10 +197,11 @@ def test_summary_with_equal_scores_still_reads_the_same_way():
                     "(Kosinus unter 0,80) zuerst prüfen, dort stehen die Kandidaten für Lücken.")
 
 
-def test_summary_for_a_single_section_page_returns_its_note():
+def test_summary_for_a_single_section_page_returns_its_note_without_statements():
     single = Document("https://wett.de/b", "Erster Absatz über Kosten.\nZweiter Absatz.", SOURCE)
     result = run(comps=[single])
-    assert gap_summary(result) == "Die Seite hat nur einen Abschnitt. Verglichen wird die ganze Seite."
+    assert gap_summary(replace(result, statements=[])) == "Die Seite hat nur einen Abschnitt. Verglichen wird die ganze Seite."
+    assert gap_summary(result).startswith("https://wett.de/b: 1 Abschnitt, 1 Aussage.")
 
 
 def test_summary_for_a_single_section_without_note_names_score_and_own_url():
@@ -241,9 +271,13 @@ def test_gap_excel_has_an_explanation_sheet_covering_every_column():
     answer = segment_answer("dachsanierung kosten", ANSWER)
     result = run(answer=answer, keyword="dachsanierung kosten")
     sheets = pd.read_excel(io.BytesIO(gap_to_excel(result)), sheet_name=None)
-    assert list(sheets) == ["Abschnitte", "Protokoll", "Erklärung"]
+    assert list(sheets) == ["Abschnitte", "Aussagen", "Protokoll", "Erklärung"]
     legend = gap_explanation_frame(result)
     explained = {(sheet, column) for sheet, column in zip(legend["Blatt"], legend["Spalte"])}
     for column in sections_frame(result).columns:
         assert ("Abschnitte", column) in explained or column == "Keyword/Prompt", column
+    from aam.gap_report import statements_frame
+    for column in statements_frame(result).columns:
+        assert ("Aussagen", column) in explained or column == "Keyword/Prompt", column
+    assert list(legend.columns) == ["Keyword/Prompt", "Blatt", "Spalte", "Bedeutung", "So ermittelt"]
     assert ("Protokoll", "Angabe") in explained and ("Protokoll", "Wert") in explained

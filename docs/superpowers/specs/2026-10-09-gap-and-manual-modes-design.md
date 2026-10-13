@@ -87,6 +87,24 @@ Die untersten Zeilen der Tabelle sind die Lücken. Das Tool schreibt kein „feh
 
 Der Hinweis „Die Seite hat nur einen Abschnitt." erscheint, sobald eine Seite nach dem Schneiden genau einen Abschnitt hat; „Verglichen wird die ganze Seite." folgt nur, wenn sie keine Abschnittsebene hat.
 
+## 6a. Aussagen-Ebene im Gap-Modus (Ergänzung 2026-10-13)
+
+Der Abschnittsvergleich aus Abschnitt 6 bleibt als **Themen-Ebene** erhalten: Er beantwortet „Hat meine Domain einen Abschnitt zu diesem Thema?“. Er beantwortet nicht, welche einzelnen Aussagen des Wettbewerbers fehlen: Ein Abschnitt „Kosten“ mit acht Fakten gegen einen eigenen Abschnitt „Kosten“ mit drei Fakten hat einen hohen Kosinus. Dafür kommt die **Aussagen-Ebene** dazu (Daniels Entscheidung: beide Ebenen, Erweiterung statt Ersatz).
+
+**Chunking.** Jeder Abschnitt beider Seiten wird mit dem Chunker aus Stufe 1 (`aam.chunk`, kurze Zeilen zusammenlegen, lange teilen) in Chunks der Zielgröße „Aussagen-Ebene“ geschnitten, Standard 30 Wörter, Zahlenfeld in der Seitenleiste. Kein Faktor, beide Seiten sind Website-Text. Jeder Chunk kennt seinen Abschnitt.
+
+**Vergleich.** Pro Wettbewerber-Chunk der beste eigene Chunk über alle eigenen Seiten (Kosinus). Das Urteil braucht keine feste Schwelle, die Referenz kommt aus demselben Lauf:
+
+- **Nachbar-Referenz:** höchster Kosinus des Wettbewerber-Chunks zu den anderen Chunks desselben Abschnitts, die keinen Satz mit ihm teilen (Fensterüberlappung). Das ist das Niveau „gleiches Thema, andere Aussage“. Hat der Abschnitt keinen solchen Nachbarn, gilt der Median der Nachbar-Referenzen der Seite; hat die Seite keinen, entfällt diese Referenz.
+- **Spezifitäts-Referenz:** höchster Kosinus des gefundenen eigenen Chunks zu den anderen Wettbewerber-Chunks der Seite (ohne Satzüberlappung). Ein eigener Allgemeinsatz, der zu allem passt, ist kein Gegenpart.
+- **Delta** = min(Kosinus − Nachbar-Referenz, Kosinus − Spezifitäts-Referenz). Status mit den Schwellen aus Stufe 1 (abgedeckt ≥ −0,05, schwach ≥ −0,15, sonst Lücke); die beiden Schieberegler erscheinen auch im Gap-Modus.
+
+Messung mit bge-m3 an echten Seiten (Fressnapf „Welpe zieht ein“ als Wettbewerber, zooplus „Welpen eingewöhnen“ als eigene Seite, 49 gegen 28 Chunks): als Lücke markiert werden Hundesteuer, Haftpflicht- und Krankenversicherung, Sachkundenachweis und die Gassi-Regel, die zooplus tatsächlich nicht hat; der Katzen-Abschnitt landet bei „schwach“ (zooplus ist beim Thema Eingewöhnung, nicht bei Katzen). OBI „Kellersanierung“ gegen zooplus: 0 abgedeckt, 9 schwach, 48 Lücke. Ohne die Spezifitäts-Referenz wären die Katzen-Chunks „abgedeckt“ gewesen.
+
+**Urteil pro Abschnitt** aus den Status seiner Aussagen: „Themenlücke“ (mehr als die Hälfte Lücke), „Detaillücken“ (mindestens eine Lücke, höchstens die Hälfte), „nur beim Thema“ (keine Lücke, mehr als die Hälfte schwach), sonst „abgedeckt“.
+
+**Ausgabe.** Blatt „Abschnitte“ bekommt die Spalten Aussagen, abgedeckt, schwach, Lücke, Urteil. Neues Blatt „Aussagen“: Wettbewerber-URL, Abschnitt, Aussage (Wettbewerber-Chunk), Wörter, Beste eigene URL, Eigener Abschnitt, Bester eigener Chunk, Kosinus eigen, Referenz Nachbarn, Referenz Spezifität, Delta, Status, optional Nächste AI-Aussage, Kosinus AI-Aussage, Priorität (Kosinus AI-Aussage minus Kosinus eigen). In der Oberfläche steht die Zusammenfassung mit den Urteilen zuerst (Themenlücken, dann Detaillücken mit den fehlenden Aussagen), darunter die Abschnitte und die Aussagen (Lücken zuerst). Excel: Abschnitte, Aussagen, Protokoll, Erklärung.
+
 ## 7. Stufe-1-Ergänzung: Nähe zum Quell-Chunk
 
 Der Tab „Aussagen" und das Excel-Blatt „Aussagen" bekommen die Spalte „Nähe zum Quell-Chunk": Kosinus zwischen dem besten eigenen Chunk und dem besten Quell-Chunk derselben Aussage. Nur mit Quellen.

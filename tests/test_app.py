@@ -567,9 +567,13 @@ def test_gap_mode_compares_sections_and_offers_the_excel(backend):
     assert list(frame["Kosinus"]) == sorted(frame["Kosinus"], reverse=True)
     assert "https://quelle.de/foerderung" in at.code[0].value and "Abschnittsebene H2" in at.code[0].value
     summary = gap_report.gap_summary(at.session_state["gap_result"])
-    assert "2 Abschnitte, Kosinus von" in summary and "Kandidaten für Lücken" in summary
-    assert [m.value for m in at.markdown if "Die untere Hälfte der Liste" in m.value] == [summary]
-    assert "Vergleich" in frame.columns
+    assert summary.startswith("https://quelle.de/foerderung: 2 Abschnitte, 2 Aussagen.")
+    assert summary in [m.value for m in at.markdown]
+    assert "Vergleich" in frame.columns and "Urteil" in frame.columns
+    statements = at.dataframe[1].value
+    assert "Status" in statements.columns and "Referenz Nachbarn" in statements.columns
+    assert "Bester eigener Chunk" not in statements.columns
+    assert any(s.key == "gap_statement_target" for s in at.sidebar.number_input)
     assert any(e.label == "Texte nachlesen" for e in at.expander)
     assert [b.key for b in at.get("download_button")] == ["gap_download"]
     assert "gap_result" in at.session_state

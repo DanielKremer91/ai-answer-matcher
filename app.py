@@ -11,7 +11,7 @@ import httpx
 import streamlit as st
 from typing import Optional
 
-from aam import compare, embeddings, extract, gap, gap_report, pipeline, report, segment
+from aam import compare, embeddings, extract, gap, gap_report, gap_statements, pipeline, report, segment
 from aam.cache import MemoryCache
 from aam.envfile import load_env_file
 from aam.ingest import chunks_file, content
@@ -57,7 +57,8 @@ MODE_KEYS = {
                   "content_factor", "source_text", "own_url_filter", "own_label", "source_label"),
     MODE_MANUAL: ("manual_short", "manual_long"),
     MODE_GAP: ("gap_competitor_urls", "gap_competitor_text", "gap_own_urls", "gap_own_text", "gap_keyword",
-               "gap_answer", "gap_own_url_filter", "gap_competitor_label", "gap_own_label", "content_factor"),
+               "gap_answer", "gap_own_url_filter", "gap_competitor_label", "gap_own_label", "content_factor",
+               "gap_statement_target", "covered_delta", "weak_delta"),
 }
 COPY_PREFIX = "kept_"
 
@@ -150,6 +151,26 @@ with st.sidebar:
                  "Lücke: Der Abstand ist größer als diese Schwelle. "
                  "Beispiel bei 0,05 und 0,15: Quelle 0,85, du 0,75 → Abstand 0,10 → schwach; "
                  "du 0,60 → Abstand 0,25 → Lücke.")
+        if weak_delta < covered_delta:
+            st.warning("Die Schwelle „schwach“ liegt unter „abgedeckt“ und wird auf denselben Wert gesetzt.")
+            weak_delta = covered_delta
+    elif mode == MODE_GAP:
+        target_override, merge_short, split_long = 0, True, True
+        gap_statement_target = st.number_input(
+            "Chunk-Zielgröße Aussagen-Ebene (Wörter)", min_value=10, max_value=120,
+            value=kept("gap_statement_target", gap_statements.DEFAULT_STATEMENT_TARGET), step=5, key="gap_statement_target",
+            help="Beide Seiten werden innerhalb ihrer Abschnitte in Chunks dieser Größe geschnitten, ein bis zwei "
+                 "Sätze. Jeder Wettbewerber-Chunk gilt als eine Aussage und bekommt deinen besten Chunk als Gegenpart.")
+        st.caption("Status einer Wettbewerber-Aussage, gemessen am Abstand zwischen deinem besten Chunk und der "
+                   "Referenz aus dem Wettbewerber-Text selbst (nächste Nachbar-Aussage, Spezifität):")
+        covered_delta = st.slider(
+            "Schwelle „abgedeckt“", 0.0, 0.3, kept("covered_delta", 0.05), 0.01, key="covered_delta",
+            help="Abgedeckt: Dein bester Chunk liegt höchstens so weit unter der Referenz. "
+                 "Beispiel bei 0,05: Referenz 0,75, du 0,72 → Abstand 0,03 → abgedeckt.")
+        weak_delta = st.slider(
+            "Schwelle „schwach“", 0.0, 0.5, kept("weak_delta", 0.15), 0.01, key="weak_delta",
+            help="Schwach: Der Abstand liegt zwischen den Schwellen, du bist beim Thema, nicht bei der Aussage. "
+                 "Lücke: Der Abstand ist größer als diese Schwelle.")
         if weak_delta < covered_delta:
             st.warning("Die Schwelle „schwach“ liegt unter „abgedeckt“ und wird auf denselben Wert gesetzt.")
             weak_delta = covered_delta
@@ -662,7 +683,15 @@ def render_gap_result(result) -> None:
         st.caption("Sortiert nach Kosinus, absteigend. Die Zeilen am Ende sind die Kandidaten für Lücken: "
                    "Abschnitte des Wettbewerbers, zu denen dein Content kaum einen Gegenpart hat.")
         frame = gap_report.sections_frame(result)
+    st.markdown("**Themen-Ebene: Abschnitte**")
     st.dataframe(frame.drop(columns=GAP_TEXT_COLUMNS), width="stretch", hide_index=True)
+    if result.statements:
+        st.markdown("**Aussagen-Ebene: jede Aussage des Wettbewerbers mit deinem besten Chunk**")
+        st.caption("Lücken zuerst, dann schwach, dann abgedeckt. Status aus dem Delta: dein Kosinus minus die höhere "
+                   "der beiden Referenzen aus dem Wettbewerber-Text (Nachbar-Aussagen desselben Abschnitts, "
+                   "Spezifität deines Chunks). Null oder mehr heißt: Du sagst dasselbe.")
+        st.dataframe(gap_report.statements_frame(result).drop(columns=["Bester eigener Chunk"]),
+                     width="stretch", hide_index=True)
     rows = [(gap_page, row) for gap_page in pages for row in gap_page.rows]
     with st.expander("Texte nachlesen"):
         if len(rows) > GAP_TEXT_ROWS:
@@ -693,9 +722,17 @@ def render_gap() -> None:
             "bleibt dein bester Abschnitt, mit dem Kosinus-Wert der beiden.\n\n"
             "Die Liste ist **absteigend nach Kosinus sortiert**. Die Zeilen am Ende sind die **Kandidaten für "
             "Lücken**: Themen, die der Wettbewerber behandelt und zu denen du keinen ähnlichen Abschnitt hast. "
-            "Das Tool schreibt kein „fehlt“ in die Tabelle, die Wertung liegt bei dir. Ist ein Abschnitt viel "
-            "länger als der andere, zählt der bessere von Ganztext- und Fensterwert; die Spalte „Vergleich“ "
-            "nennt, woher der Wert stammt.\n\n"
+            "Ist ein Abschnitt viel länger als der andere, zählt der bessere von Ganztext- und Fensterwert; "
+            "die Spalte „Vergleich“ nennt, woher der Wert stammt. Das ist die **Themen-Ebene**: Hast du zu "
+            "diesem Thema überhaupt einen Abschnitt?\n\n"
+            "Darunter die **Aussagen-Ebene**: Beide Seiten werden innerhalb ihrer Abschnitte in Chunks von ein bis "
+            "zwei Sätzen geschnitten. Jeder Wettbewerber-Chunk gilt als eine Aussage und bekommt deinen besten "
+            "Chunk. Ob das dieselbe Aussage ist, entscheidet der Vergleich mit zwei Referenzen aus dem "
+            "Wettbewerber-Text selbst: den Nachbar-Aussagen desselben Abschnitts (gleiches Thema, andere Aussage) "
+            "und der Spezifität deines Chunks (passt er zu allem ein bisschen?). So braucht es keine feste "
+            "Schwelle, die vom Modell abhängt. Pro Abschnitt entsteht ein **Urteil**: Themenlücke, Detaillücken, "
+            "nur beim Thema oder abgedeckt. Die Zusammenfassung oben nennt zuerst die Themenlücken, dann die "
+            "Detaillücken mit den fehlenden Aussagen.\n\n"
             "Wettbewerber und eigener Content kommen aus URLs, die das Tool lädt, oder aus einem "
             "Screaming-Frog-Export mit Überschriften im Main Content (siehe README). Optional kannst du eine "
             "AI-Antwort einfügen: Dann steht in jeder Zeile zusätzlich die nächste Aussage der Antwort.")
@@ -742,7 +779,8 @@ def render_gap() -> None:
         st.caption("Es fehlen noch Wettbewerber-Seiten oder eigener Content.")
 
     signature = (tuple(comp_urls), comp_text, comp_label, tuple(own_urls), own_text, gap_own_label,
-                 gap_keyword.strip(), gap_answer.strip(), round(content_factor, 2),
+                 gap_keyword.strip(), gap_answer.strip(), round(content_factor, 2), int(gap_statement_target),
+                 round(covered_delta, 3), round(weak_delta, 3),
                  comp_parsed["sig"] if comp_parsed else None, own_parsed["sig"] if own_parsed else None,
                  tuple(sorted(gap_own_selected)) if gap_own_selected else None,
                  provider_name, model)
@@ -768,7 +806,8 @@ def render_gap() -> None:
                 lambda texts: embeddings.embed_cached(
                     provider, texts, state["cache"],
                     progress=lambda done, total: feedback.progress(done, total, "Embeddings")),
-                provider_name, model, answer=answer, keyword=gap_keyword.strip(), content_factor=content_factor)
+                provider_name, model, answer=answer, keyword=gap_keyword.strip(), content_factor=content_factor,
+                statement_target=int(gap_statement_target), covered_delta=covered_delta, weak_delta=weak_delta)
             state["gap_sig"] = signature
             state["gap_failed"] = failure_lines(failed)
             state.pop("gap_excel", None)

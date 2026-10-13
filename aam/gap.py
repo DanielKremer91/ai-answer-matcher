@@ -9,6 +9,8 @@ from typing import Optional, Sequence
 import numpy as np
 
 from aam.compare import LENGTH_RATIO, Embed, long_windows, text_vectors
+from aam.gap_statements import (DEFAULT_STATEMENT_TARGET, GapStatement, SectionVerdict, chunk_sections,
+                                section_verdicts, statement_level)
 from aam.match import unit_rows
 from aam.models import Document, SegmentedAnswer, Statement
 from aam.segment import MAX_TARGET, MIN_TARGET, derive_target
@@ -40,6 +42,7 @@ class GapRow:
     rank: int                   # 1 = most similar
     method: str = METHOD_WHOLE  # where the score comes from (METHOD_* constants)
     statement_whole_score: Optional[float] = None  # the whole section against that statement, no windows
+    verdict: Optional[SectionVerdict] = None       # statement level: how many of the section's statements you cover
 
 
 @dataclass(frozen=True)
@@ -64,6 +67,14 @@ class GapResult:
     model: str
     date: str
     keyword: str = ""
+    statements: list = None          # GapStatement per competitor chunk (statement level)
+    statement_target: int = DEFAULT_STATEMENT_TARGET
+    covered_delta: float = 0.05
+    weak_delta: float = 0.15
+
+    def __post_init__(self):
+        if self.statements is None:
+            object.__setattr__(self, "statements", [])
 
 
 @dataclass
@@ -89,7 +100,9 @@ def _unit(vector: np.ndarray) -> np.ndarray:
 
 def analyze_gap(competitors: Sequence[Document], own: Sequence[Document], embed: Embed,
                 provider_name: str, model: str, *, answer: Optional[SegmentedAnswer] = None,
-                keyword: str = "", today: Optional[date] = None, content_factor: float = 1.5) -> GapResult:
+                keyword: str = "", today: Optional[date] = None, content_factor: float = 1.5,
+                statement_target: int = DEFAULT_STATEMENT_TARGET, covered_delta: float = 0.05,
+                weak_delta: float = 0.15) -> GapResult:
     """Compare every section of every competitor page with all own sections and keep the best match.
 
     Costs at most two `embed` calls: one for all section, page and statement vectors, and one for the
@@ -104,8 +117,14 @@ def analyze_gap(competitors: Sequence[Document], own: Sequence[Document], embed:
 
     statements = list(answer.statements) if answer is not None else []
     all_sides = comp_sides + own_sides
+    # statement level: both sides cut into statement-sized chunks inside their sections
+    comp_chunks = {side.doc.url: chunk_sections(side.doc.url, side.doc.origin, side.sections, statement_target)
+                   for side in comp_sides}
+    own_chunks = [c for side in own_sides
+                  for c in chunk_sections(side.doc.url, side.doc.origin, side.sections, statement_target)]
     texts = [s.embed_text for side in all_sides for s in side.sections] + [side.text for side in all_sides]
     texts += [st.text for st in statements]
+    texts += [c.text for chunks in comp_chunks.values() for c in chunks] + [c.text for c in own_chunks]
     vectors = {t: v for t, v in text_vectors(texts, embed, provider_name).items() if v is not None}
 
     def section_vec(section: Section) -> Optional[np.ndarray]:
@@ -192,6 +211,13 @@ def analyze_gap(competitors: Sequence[Document], own: Sequence[Document], embed:
 
     statement_vectors = [(st, vectors[st.text]) for st in statements if st.text in vectors]
 
+    gap_statements: list[GapStatement] = []
+    for side in comp_sides:
+        gap_statements += statement_level(side.doc.url, comp_chunks[side.doc.url], own_chunks, vectors,
+                                          covered_delta=covered_delta, weak_delta=weak_delta,
+                                          statement_vectors=statement_vectors)
+    verdicts = section_verdicts(gap_statements)
+
     pages: list[GapPage] = []
     for side in comp_sides:
         found = []
@@ -216,7 +242,7 @@ def analyze_gap(competitors: Sequence[Document], own: Sequence[Document], embed:
                     ((st, statement_fit(v)) for st, v in statement_vectors), key=lambda item: item[1][0])
                 statement_score, statement_whole = min(1.0, statement_score), min(1.0, statement_whole)
             rows.append(GapRow(c, o, min(1.0, score), windowed, window, statement, statement_score, rank, method,
-                               statement_whole))
+                               statement_whole, verdicts.get((side.doc.url, c.index))))
 
         page_score, best_url = 0.0, ""
         page_vec = vectors.get(side.text)
@@ -244,4 +270,5 @@ def analyze_gap(competitors: Sequence[Document], own: Sequence[Document], embed:
         pages=pages,
         own_pages=[(side.doc.url, side.level or 0, len(side.sections)) for side in own_sides],
         answer=answer, provider=provider_name, model=model,
-        date=(today or date.today()).isoformat(), keyword=keyword)
+        date=(today or date.today()).isoformat(), keyword=keyword, statements=gap_statements,
+        statement_target=statement_target, covered_delta=covered_delta, weak_delta=weak_delta)
