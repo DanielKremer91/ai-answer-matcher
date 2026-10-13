@@ -1038,3 +1038,10 @@ def test_readiness_caption_names_what_is_missing():
     caption = next(c.value for c in at.caption if c.value.startswith("Es fehlt noch"))
     assert "AI-Antwort (Schritt 1)" in caption and "eigener Content (Schritt 2)" in caption
     assert "Keyword" not in caption.split(".")[0]
+
+
+def test_gap_mode_shows_the_chunk_factor_slider():
+    at = AppTest.from_file(APP, default_timeout=30).run()
+    at.radio(key="mode").set_value("Content-Gap zwischen Seiten").run()
+    assert not at.exception
+    assert any(s.key == "content_factor" for s in at.sidebar.slider)

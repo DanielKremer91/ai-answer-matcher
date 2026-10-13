@@ -57,7 +57,7 @@ MODE_KEYS = {
                   "content_factor", "source_text", "own_url_filter", "own_label", "source_label"),
     MODE_MANUAL: ("manual_short", "manual_long"),
     MODE_GAP: ("gap_competitor_urls", "gap_competitor_text", "gap_own_urls", "gap_own_text", "gap_keyword",
-               "gap_answer", "gap_own_url_filter", "gap_competitor_label", "gap_own_label"),
+               "gap_answer", "gap_own_url_filter", "gap_competitor_label", "gap_own_label", "content_factor"),
 }
 COPY_PREFIX = "kept_"
 
@@ -114,13 +114,18 @@ with st.sidebar:
         api_key = typed.strip() or os.environ.get(env_name, "")
         if not api_key:
             st.caption(f"Noch kein Key vorhanden ({env_name}).")
-    if mode == MODE_STAGE1:
+    if mode in (MODE_STAGE1, MODE_GAP):
         st.divider()
         content_factor = st.slider(
             "Chunk-Faktor (Content zu Aussage)", 1.0, 3.0, kept("content_factor", 1.5), 0.1, key="content_factor",
             help="Website-Text braucht für denselben Sachverhalt mehr Wörter als eine verdichtete AI-Aussage. "
                  "Die Chunk-Zielgröße ist der Median der Aussagenlänge mal diesem Faktor. "
-                 "1,0 = gleiche Größe, 1,5 = anderthalbfach (Standard).")
+                 "1,0 = gleiche Größe, 1,5 = anderthalbfach (Standard)."
+                 + (" Im Gap-Modus bestimmt der Faktor nur die Fenstergröße für die Spalte „Kosinus AI-Aussage“ "
+                    "und wirkt nur, wenn eine AI-Antwort eingefügt ist." if mode == MODE_GAP else ""))
+    else:
+        content_factor = 1.5
+    if mode == MODE_STAGE1:
         target_override = st.number_input(
             "Chunk-Zielgröße in Wörtern (0 = aus der AI-Antwort ableiten)",
             min_value=0, max_value=300, value=kept("target_override", 0), step=1, key="target_override")
@@ -150,7 +155,6 @@ with st.sidebar:
             weak_delta = covered_delta
     else:  # not shown in the other modes; stage-1 values stay unused there
         target_override, merge_short, split_long, covered_delta, weak_delta = 0, True, True, 0.05, 0.15
-        content_factor = 1.5
 
 
 # ---------------------------------------------------------------- helpers
@@ -738,7 +742,7 @@ def render_gap() -> None:
         st.caption("Es fehlen noch Wettbewerber-Seiten oder eigener Content.")
 
     signature = (tuple(comp_urls), comp_text, comp_label, tuple(own_urls), own_text, gap_own_label,
-                 gap_keyword.strip(), gap_answer.strip(),
+                 gap_keyword.strip(), gap_answer.strip(), round(content_factor, 2),
                  comp_parsed["sig"] if comp_parsed else None, own_parsed["sig"] if own_parsed else None,
                  tuple(sorted(gap_own_selected)) if gap_own_selected else None,
                  provider_name, model)

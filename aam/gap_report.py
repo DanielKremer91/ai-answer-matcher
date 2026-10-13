@@ -101,7 +101,7 @@ GAP_COLUMN_EXPLANATIONS = {
     ("Abschnitte", "Vergleich"): "„Ganztext“: Beide Abschnitte wurden als Ganzes verglichen. „Fenster aus …“: Ein Abschnitt war mehr als viermal so lang wie der andere, darum wurde der längere in Stücke geteilt und das beste Stück gezählt.",
     ("Abschnitte", "Bestes Fenster"): "Das beste Stück im Wortlaut, wenn geteilt wurde. Sonst leer.",
     ("Abschnitte", "Nächste AI-Aussage"): "Die Aussage der AI-Antwort, die diesem Wettbewerber-Abschnitt am nächsten kommt.",
-    ("Abschnitte", "Kosinus AI-Aussage"): "Wie nah der Abschnitt an dieser AI-Aussage liegt. Bei langen Abschnitten zählt das beste Stück in Chunk-Größe (Median der Aussagenlänge mal Chunk-Faktor 1,5). Hoch heißt: Dieser Abschnitt zählt für die AI-Antwort.",
+    ("Abschnitte", "Kosinus AI-Aussage"): "Wie nah der Abschnitt an dieser AI-Aussage liegt. Bei langen Abschnitten zählt das beste Stück in Chunk-Größe (Median der Aussagenlänge mal Chunk-Faktor aus der Seitenleiste). Hoch heißt: Dieser Abschnitt zählt für die AI-Antwort.",
     ("Abschnitte", "Priorität"): "Kosinus AI-Aussage minus Kosinus. Hoch = nah an der AI-Antwort und weit weg von deinem Content: eine Lücke, die sich zuerst lohnt.",
     ("Abschnitte", "Text Wettbewerber"): "Der Wettbewerber-Abschnitt im Wortlaut.",
     ("Abschnitte", "Text eigen"): "Der eigene Abschnitt im Wortlaut.",
