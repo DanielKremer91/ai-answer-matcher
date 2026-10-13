@@ -116,7 +116,7 @@ Mit AI-Antwort bekommt jede Zeile der Gap-Tabelle zusätzlich die nächste Aussa
 - Entferne Zeilen, die nicht zur Antwort gehören: Hinweise wie „KI-Antworten können Fehler enthalten“, Titel der Quellenkarten und Domainnamen.
 - Trage den API-Key ein, bevor du Schritt 4 startest. Hat die Antwort keine erkennbare Struktur, zerlegt das Tool sie nach Bedeutung und braucht dafür schon in Schritt 4 das Embedding-Modell.
 
-**Quell-URLs.** Werden per HTTP geladen, der Main Content kommt aus trafilatura. Seiten, die sich nicht laden lassen, stehen im Protokoll. Für solche Fälle kannst du den Content der Quellen auch als Datei im selben Format hochladen.
+**Quell-URLs.** Werden per HTTP geladen. Den Main Content holt ein DOM-Walk: Er nimmt den Inhaltscontainer der Seite (`<main>`, `<article>` oder den größten Textblock), geht ihn in Lesereihenfolge durch und schreibt Überschriften mit `##`-Marker, Absätze, Listenpunkte und Tabellenzeilen heraus. Zugeklappte Akkordeons (FAQ) bleiben drin, Navigation, Inhaltsverzeichnis, Autorenbox, Teaser auf andere Artikel und Ähnliches fallen anhand von Tag, Rolle und Klassennamen weg. Findet der Walk keinen brauchbaren Container, übernimmt trafilatura. Inhalte, die erst per JavaScript nachgeladen werden, fehlen in beiden Fällen; für solche Seiten ist der Weg über Screaming Frog mit JavaScript-Rendering und dem Snippet in `examples/` die bessere Wahl. Seiten, die sich nicht laden lassen, stehen im Protokoll. Für solche Fälle kannst du den Content der Quellen auch als Datei im selben Format hochladen.
 
 **Ohne Quell-URLs** läuft die Analyse ebenfalls. Der Status zeigt dann nur die relative Stärke innerhalb deines eigenen Contents. Für diesen Status braucht es mindestens 4 Aussagen in der AI-Antwort, sonst bleibt er leer.
 
@@ -162,7 +162,7 @@ Nach einer Analyse kannst du die **Chunk-Embeddings herunterladen**. Beim nächs
 - **Ähnlichkeit ist notwendig, nicht hinreichend.** Ein hoher Score heißt nicht, dass Google dich zitiert. Rankings, Crawlbarkeit und Autorität entscheiden mit.
 - **Nicht auf den Score optimieren.** Die AI-Antwort ist aus den Quellen entstanden, die Quellen scoren deshalb zwangsläufig hoch. Wer die Antwort nachschreibt, liefert keinen Grund, zitiert zu werden. Nützlich sind die Lücken: Aussagen, zu denen dir eine eigenständige Passage fehlt.
 - **Der Vergleich ist größenabhängig.** Der beste eigene Chunk ist das Maximum über alle Chunks der Domain, der beste Quell-Chunk das Maximum über wenige Seiten. Je größer dein Export, desto leichter wird „abgedeckt“ erreicht. Beschränke den Export deshalb auf relevante Seiten.
-- **Gleiche Extraktion für einen fairen Benchmark.** Eigener Content aus dem Frog-Extraktor und Quellen aus der automatischen Extraktion (trafilatura) unterscheiden sich in dem, was als Boilerplate gilt. Für einen fairen Vergleich lade den Content der Quellen mit demselben Frog-Setup und lade ihn als Datei hoch.
+- **Gleiche Extraktion für einen fairen Benchmark.** Eigener Content aus dem Frog-Extraktor und Quellen aus der automatischen Extraktion (DOM-Walk) unterscheiden sich in dem, was als Boilerplate gilt. Für einen fairen Vergleich lade den Content der Quellen mit demselben Frog-Setup und lade ihn als Datei hoch.
 - **Momentaufnahme.** AI-Antworten ändern sich täglich und je nach Nutzer. Das Datum steht im Protokoll.
 - **Absolute Werte sind modellabhängig.** Vergleiche nur Läufe mit demselben Embedding-Modell.
 

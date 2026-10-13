@@ -8,6 +8,7 @@ from typing import Callable, Optional, Sequence
 import httpx
 import trafilatura
 
+from aam.dom_extract import extract_dom
 from aam.models import Document, FailedUrl
 from aam.text import is_separator_line
 
@@ -41,11 +42,19 @@ def _clean_inline(line: str) -> str:
 
 
 def extract_text(html) -> str:
-    """Main content as Markdown, one paragraph per line; "" when nothing usable is found.
+    """Main content, one block per line, headings as `## Title`; "" when nothing usable is found.
 
-    Headings arrive as `## Title` lines. Inline Markdown (emphasis, code, escapes, list markers) is
-    removed, empty lines and table separator rows (`|---|---|`) dropped.
+    First choice is the DOM walk (aam.dom_extract): it keeps collapsed accordions and every heading
+    marker. When it finds no usable container (very short pages, unusual markup), trafilatura's
+    Markdown output is used instead, with inline residue (emphasis, code, escapes, list markers)
+    removed and table separator rows (`|---|---|`) dropped.
     """
+    try:
+        text = extract_dom(html)
+    except Exception:  # malformed markup: fall through to trafilatura
+        text = ""
+    if text:
+        return text
     text = trafilatura.extract(html, include_comments=False, include_tables=True, favor_recall=True,
                                output_format="markdown")
     if not text:

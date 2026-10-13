@@ -10,7 +10,7 @@ Drei Erweiterungen, die aus der Nutzung von Stufe 1 entstanden sind:
 
 1. **Manueller Abgleich:** ein kurzer Text (eine Aussage der AI-Antwort) gegen einen beliebigen eingefügten Text, kurz oder lang, mit verlässlichem Wert.
 2. **Content-Gap zwischen Seiten:** Ausgangspunkt ist eine Wettbewerber-Seite. Für jeden ihrer Abschnitte wird der ähnlichste Abschnitt der eigenen Seite (oder Domain) gesucht. Absteigend sortiert zeigt die Liste, welche Abschnitte des Wettbewerbers bei dir fehlen. Optional mit Bezug zur AI-Antwort.
-3. **Abschnitte aus dem Layout:** Überschriften werden erkannt (`##`-Markierung aus trafilatura oder aus dem Frog-Snippet), ein Abschnitt ist alles von einer Überschrift bis zur nächsten derselben Ebene.
+3. **Abschnitte aus dem Layout:** Überschriften werden erkannt (`##`-Markierung aus dem DOM-Walk in `aam.dom_extract` oder aus dem Frog-Snippet), ein Abschnitt ist alles von einer Überschrift bis zur nächsten derselben Ebene.
 
 Nicht-Ziele: keine Schwelle für „fehlt" (die sortierte Liste mit Werten reicht), kein Retrieval-Modus (Query/Passage-Präfixe), keine neue Anbieter-Schicht.
 
@@ -22,7 +22,7 @@ Nicht-Ziele: keine Schwelle für „fehlt" (die sortierte Liste mit Werten reich
 
 ## 3. Abschnitte (`aam.sections`)
 
-Eingabe ist der Main Content einer Seite, ein Absatz pro Zeile. Überschriften sind Zeilen der Form `# Titel` bis `###### Titel`. Sie stammen aus trafilatura (Markdown-Ausgabe) oder aus dem Frog-Snippet `examples/screaming-frog-main-content.js`.
+Eingabe ist der Main Content einer Seite, ein Absatz pro Zeile. Überschriften sind Zeilen der Form `# Titel` bis `###### Titel`. Sie stammen aus dem DOM-Walk (`aam.dom_extract`, Rückfall trafilatura) oder aus dem Frog-Snippet `examples/screaming-frog-main-content.js`.
 
 - **Abschnittsebene:** die kleinste Überschriftennummer größer als 1, die auf der Seite mindestens einmal vorkommt (also H2 vor H3 vor H4). Gibt es keine solche Ebene, ist die ganze Seite ein Abschnitt mit dem Titel der H1, sonst „Gesamte Seite".
 - **Abschnitt:** alles von einer Überschrift der Abschnittsebene bis zur nächsten Überschrift derselben oder einer höheren Ebene. Tiefer liegende Überschriften bleiben als Textzeilen (ohne Markierung) im Abschnitt. Tabellenzeilen und Listen gehören zum Abschnitt.
@@ -31,7 +31,7 @@ Eingabe ist der Main Content einer Seite, ein Absatz pro Zeile. Überschriften s
 
 Für den AI-Modus (Stufe 1) ändert sich nur: Markierungen `#` am Zeilenanfang werden beim Chunking entfernt, die Überschrift bleibt als kurze Zeile erhalten und wird wie bisher mit dem folgenden Absatz zusammengelegt.
 
-`aam.extract.extract_text` liefert ab jetzt die Markdown-Ausgabe von trafilatura, damit Überschriften markiert ankommen. Fettdruck-Markierungen (`**`) werden entfernt.
+`aam.extract.extract_text` liefert seit 2026-10-13 die Ausgabe des DOM-Walks `aam.dom_extract` (Hauptcontainer, Lesereihenfolge, Überschriften als `#`-Zeilen, Akkordeons bleiben, Boilerplate nach Tag, Rolle und Klassenname weg, kurze Fett-Absätze als Überschrift eine Ebene unter der letzten, Teaser-Abschnitte ab Überschriften wie „Das könnte dich auch interessieren“ weg). Rückfall ist die Markdown-Ausgabe von trafilatura, bereinigt um Inline-Markierungen. Messlatte an drei echten Seiten (OBI, zooplus, Fressnapf): zooplus 0 % fehlende Sätze, Fressnapf 3 %, OBI 13 % (nur Teaser auf andere Ratgeber), höchstens 5 % Fremdsätze, alle Überschriften.
 
 ## 4. Vergleich zweier Texte (`aam.compare`)
 

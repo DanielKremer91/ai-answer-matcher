@@ -42,7 +42,7 @@ Ein Python-Paket `aam` mit getrennten Modulen und eine Streamlit-Datei `app.py`,
 | `aam.ingest.content` | Frog-Export mit URL und Main Content → `Document`-Liste | tables |
 | `aam.ingest.chunks_file` | Chunk-Embedding-Export dieses Tools einlesen und prüfen | tables |
 | `aam.ingest.urls` | URL-Textfeld parsen, normalisieren, deduplizieren | – |
-| `aam.extract` | URL laden, Main Content mit trafilatura extrahieren, Fehlerliste | httpx, trafilatura |
+| `aam.extract` | URL laden, Main Content per DOM-Walk (`aam.dom_extract`, Rückfall trafilatura) extrahieren, Fehlerliste | httpx, lxml, trafilatura |
 | `aam.segment` | AI-Antwort → Themen und Aussagen, Zielgröße ableiten | embeddings (nur Fallback) |
 | `aam.chunk` | `Document` → Chunks um die Zielgröße, Statistik | – |
 | `aam.embeddings` | Provider OpenAI, Gemini, Ollama, Batching, Cache nach Textinhalt (aus `blm` übernommen) | httpx |
