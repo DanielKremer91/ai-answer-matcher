@@ -11,7 +11,7 @@ import numpy as np
 from aam.compare import LENGTH_RATIO, Embed, long_windows, text_vectors
 from aam.match import unit_rows
 from aam.models import Document, SegmentedAnswer, Statement
-from aam.segment import MAX_TARGET, MIN_TARGET
+from aam.segment import MAX_TARGET, MIN_TARGET, derive_target
 from aam.sections import Section, plain_text, section_level, split_sections
 
 SINGLE_SECTION_NOTE = "Die Seite hat nur einen Abschnitt."
@@ -88,7 +88,7 @@ def _unit(vector: np.ndarray) -> np.ndarray:
 
 def analyze_gap(competitors: Sequence[Document], own: Sequence[Document], embed: Embed,
                 provider_name: str, model: str, *, answer: Optional[SegmentedAnswer] = None,
-                keyword: str = "", today: Optional[date] = None) -> GapResult:
+                keyword: str = "", today: Optional[date] = None, content_factor: float = 1.5) -> GapResult:
     """Compare every section of every competitor page with all own sections and keep the best match.
 
     Costs at most two `embed` calls: one for all section, page and statement vectors, and one for the
@@ -152,11 +152,12 @@ def analyze_gap(competitors: Sequence[Document], own: Sequence[Document], embed:
                 windowed[index] = key
             plans[id(c)] = (whole, windowed)
     # Statement windows: a 15-word statement against a 200-word section is diluted, so every competitor
-    # section that is more than LENGTH_RATIO times the median statement length also gets windows of
-    # statement size; the statement score is the better of whole section and best window.
+    # section that is more than LENGTH_RATIO times the chunk target also gets windows of that size; the
+    # statement score is the better of whole section and best window. The target is the same as in the
+    # answer mode: median statement length times the content factor, clamped.
     statement_windows: dict[str, list[str]] = {}
     if statements:
-        statement_target = max(MIN_TARGET, min(MAX_TARGET, int(np.median([st.words for st in statements]))))
+        statement_target, _ = derive_target([st.words for st in statements], content_factor)
         for side in comp_sides:
             for c in side.sections:
                 if c.words > LENGTH_RATIO * statement_target:

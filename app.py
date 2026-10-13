@@ -764,7 +764,7 @@ def render_gap() -> None:
                 lambda texts: embeddings.embed_cached(
                     provider, texts, state["cache"],
                     progress=lambda done, total: feedback.progress(done, total, "Embeddings")),
-                provider_name, model, answer=answer, keyword=gap_keyword.strip())
+                provider_name, model, answer=answer, keyword=gap_keyword.strip(), content_factor=content_factor)
             state["gap_sig"] = signature
             state["gap_failed"] = failure_lines(failed)
             state.pop("gap_excel", None)

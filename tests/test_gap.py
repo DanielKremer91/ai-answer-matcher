@@ -423,4 +423,26 @@ def test_statement_score_uses_statement_sized_windows_of_long_sections():
     result = run([competitor], [own], answer=answer)
     row = result.pages[0].rows[0]
     assert row.statement is not None and row.statement.text == statement
-    assert row.statement_score > 0.5  # a window holding the statement; the whole 400-word section scores < 0.2
+    # A window of chunk size (median 12 words x 1.5 = 18) holding the statement scores about 0.4 with the
+    # bag-of-words fake; the whole 400-word section scores below 0.2.
+    assert row.statement_score > 0.35
+
+
+def test_statement_windows_use_the_chunk_target_with_the_content_factor(monkeypatch):
+    """The window size in the gap mode is the same as the chunk target in the answer mode:
+    median statement length times the content factor, clamped to 15..80 words."""
+    import aam.gap as gap_module
+    seen = []
+
+    def spy(text, target):
+        seen.append(target)
+        return [text[: len(text) // 2], text[len(text) // 2:]]
+
+    monkeypatch.setattr(gap_module, "long_windows", spy)
+    answer = segment_answer("kw", ANSWER)
+    median = int(np.median([s.words for t in answer.topics for s in t.statements]))
+    filler = " ".join(f"Fuellwort{i} steht hier als Beispieltext ohne Bezug zum Thema Nummer {i} Ende." for i in range(30))
+    competitor = Document("https://wett.de/lang", "## Förderung\n" + filler, SOURCE)
+    own = Document("https://me.de/a", "## Kosten\nEine Neueindeckung kostet 100 Euro pro Quadratmeter.", OWN)
+    run([competitor], [own], answer=answer, content_factor=2.0)
+    assert seen and seen[-1] == max(15, min(80, round(median * 2.0)))
