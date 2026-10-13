@@ -426,6 +426,13 @@ def test_statement_score_uses_statement_sized_windows_of_long_sections():
     # A window of chunk size (median 12 words x 1.5 = 18) holding the statement scores about 0.4 with the
     # bag-of-words fake; the whole 400-word section scores below 0.2.
     assert row.statement_score > 0.35
+    # The whole-section value is kept separately: here far below the windowed value.
+    assert row.statement_whole_score is not None and row.statement_whole_score < 0.2
+    assert row.statement_whole_score <= row.statement_score
+    # A short section has no statement windows, so both values are the same.
+    short = Document("https://wett.de/kurz", "## Förderung\n" + statement, SOURCE)
+    short_row = run([short], [own], answer=answer).pages[0].rows[0]
+    assert short_row.statement_whole_score == short_row.statement_score
 
 
 def test_statement_windows_use_the_chunk_target_with_the_content_factor(monkeypatch):

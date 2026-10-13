@@ -39,6 +39,7 @@ class GapRow:
     statement_score: Optional[float]
     rank: int                   # 1 = most similar
     method: str = METHOD_WHOLE  # where the score comes from (METHOD_* constants)
+    statement_whole_score: Optional[float] = None  # the whole section against that statement, no windows
 
 
 @dataclass(frozen=True)
@@ -200,20 +201,22 @@ def analyze_gap(competitors: Sequence[Document], own: Sequence[Document], embed:
         found.sort(key=lambda item: item[1], reverse=True)
         rows = []
         for rank, (c, score, o, windowed, window, method) in enumerate(found, start=1):
-            statement, statement_score = None, None
+            statement, statement_score, statement_whole = None, None, None
             if statement_vectors:
                 cv = section_vec(c)
                 window_vecs = [window_vectors[w] for w in statement_windows.get(c.embed_text, ()) if w in window_vectors]
 
-                def statement_fit(v: np.ndarray) -> float:
+                def statement_fit(v: np.ndarray) -> tuple[float, float]:
+                    """(best of whole section and windows, whole section alone)."""
                     whole_fit = float(cv @ v)
                     best_window = max((float(wv @ v) for wv in window_vecs), default=whole_fit)
-                    return max(whole_fit, best_window)
+                    return max(whole_fit, best_window), whole_fit
 
-                statement, statement_score = max(((st, statement_fit(v)) for st, v in statement_vectors),
-                                                 key=lambda item: item[1])
-                statement_score = min(1.0, statement_score)
-            rows.append(GapRow(c, o, min(1.0, score), windowed, window, statement, statement_score, rank, method))
+                statement, (statement_score, statement_whole) = max(
+                    ((st, statement_fit(v)) for st, v in statement_vectors), key=lambda item: item[1][0])
+                statement_score, statement_whole = min(1.0, statement_score), min(1.0, statement_whole)
+            rows.append(GapRow(c, o, min(1.0, score), windowed, window, statement, statement_score, rank, method,
+                               statement_whole))
 
         page_score, best_url = 0.0, ""
         page_vec = vectors.get(side.text)

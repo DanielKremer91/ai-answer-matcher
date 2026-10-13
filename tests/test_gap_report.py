@@ -17,7 +17,7 @@ from tests.fakes import ANSWER, bow_vector
 
 BASE = ["Keyword/Prompt", "Wettbewerber-URL", "Rang", "Abschnitt (Wettbewerber)", "Wörter",
         "Beste eigene URL", "Eigener Abschnitt", "Wörter eigen", "Kosinus", "Vergleich", "Bestes Fenster"]
-AI = ["Nächste AI-Aussage", "Kosinus AI-Aussage", "Priorität"]
+AI = ["Nächste AI-Aussage", "Kosinus AI-Aussage", "Kosinus AI-Aussage (ganzer Abschnitt)", "Priorität"]
 TEXTS = ["Text Wettbewerber", "Text eigen"]
 
 

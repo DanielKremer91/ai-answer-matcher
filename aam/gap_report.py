@@ -13,7 +13,7 @@ from aam.report import _count, _de, _excel_frame, _frame, _score
 SHEETS = ("Abschnitte", "Protokoll", "Erklärung")
 _BASE_COLUMNS = ["Wettbewerber-URL", "Rang", "Abschnitt (Wettbewerber)", "Wörter", "Beste eigene URL",
                  "Eigener Abschnitt", "Wörter eigen", "Kosinus", "Vergleich", "Bestes Fenster"]
-_AI_COLUMNS = ["Nächste AI-Aussage", "Kosinus AI-Aussage", "Priorität"]
+_AI_COLUMNS = ["Nächste AI-Aussage", "Kosinus AI-Aussage", "Kosinus AI-Aussage (ganzer Abschnitt)", "Priorität"]
 _TEXT_COLUMNS = ["Text Wettbewerber", "Text eigen"]
 
 
@@ -30,7 +30,8 @@ def sections_frame(result: GapResult) -> pd.DataFrame:
                 # more the competitor's section matters for the answer and the less you cover it.
                 priority = (None if row.statement_score is None
                             else round(float(row.statement_score) - float(row.score), 4))
-                cells += [row.statement.text if row.statement else "", _score(row.statement_score), priority]
+                cells += [row.statement.text if row.statement else "", _score(row.statement_score),
+                          _score(row.statement_whole_score), priority]
             cells += [row.competitor.text, row.own.text]
             rows.append(cells)
     columns = _BASE_COLUMNS + (_AI_COLUMNS if with_answer else []) + _TEXT_COLUMNS
@@ -101,7 +102,8 @@ GAP_COLUMN_EXPLANATIONS = {
     ("Abschnitte", "Vergleich"): "„Ganztext“: Beide Abschnitte wurden als Ganzes verglichen. „Fenster aus …“: Ein Abschnitt war mehr als viermal so lang wie der andere, darum wurde der längere in Stücke geteilt und das beste Stück gezählt.",
     ("Abschnitte", "Bestes Fenster"): "Das beste Stück im Wortlaut, wenn geteilt wurde. Sonst leer.",
     ("Abschnitte", "Nächste AI-Aussage"): "Die Aussage der AI-Antwort, die diesem Wettbewerber-Abschnitt am nächsten kommt.",
-    ("Abschnitte", "Kosinus AI-Aussage"): "Wie nah der Abschnitt an dieser AI-Aussage liegt. Bei langen Abschnitten zählt das beste Stück in Chunk-Größe (Median der Aussagenlänge mal Chunk-Faktor aus der Seitenleiste). Hoch heißt: Dieser Abschnitt zählt für die AI-Antwort.",
+    ("Abschnitte", "Kosinus AI-Aussage"): "Kommt die Stelle vor? Wie nah der Abschnitt an dieser AI-Aussage liegt. Bei langen Abschnitten zählt das beste Stück in Chunk-Größe (Median der Aussagenlänge mal Chunk-Faktor aus der Seitenleiste). Hoch heißt: Irgendwo in diesem Abschnitt steht, was die AI sagt.",
+    ("Abschnitte", "Kosinus AI-Aussage (ganzer Abschnitt)"): "Ist der ganze Abschnitt dieser Aussage gewidmet? Derselbe Vergleich ohne Fenster, der Abschnitt als Ganzes. Beide hoch: ein fokussierter Abschnitt zu genau dieser Aussage. Nur die linke Spalte hoch: Die Aussage steht irgendwo in einem breiten Abschnitt. Bei kurzen Abschnitten sind beide Werte gleich.",
     ("Abschnitte", "Priorität"): "Kosinus AI-Aussage minus Kosinus. Hoch = nah an der AI-Antwort und weit weg von deinem Content: eine Lücke, die sich zuerst lohnt.",
     ("Abschnitte", "Text Wettbewerber"): "Der Wettbewerber-Abschnitt im Wortlaut.",
     ("Abschnitte", "Text eigen"): "Der eigene Abschnitt im Wortlaut.",
@@ -118,6 +120,7 @@ GAP_COLUMN_CALCULATIONS = {
     ("Abschnitte", "Kosinus"): "Jeder Abschnitt (Überschrift plus Text) wird als ein Text eingebettet. Wettbewerber-Abschnitt gegen jeden eigenen Abschnitt, " + _COSINE + "; der höchste Wert zählt. Bei ungleich langen Paaren (Spalte Vergleich) zusätzlich das beste Fenster, der höhere der beiden Werte gewinnt.",
     ("Abschnitte", "Vergleich"): "Ist ein Abschnitt mehr als viermal so lang wie sein Gegenpart, wird der längere an Satzgrenzen in Fenster von der Länge des kürzeren geschnitten (ein Satz Überlappung), jedes Fenster eingebettet. Bis 40 eigene Abschnitte für alle solchen Paare, darüber für die fünf besten Ganztext-Paare und die fünf längsten.",
     ("Abschnitte", "Kosinus AI-Aussage"): "Jede Aussage der AI-Antwort eingebettet. Wettbewerber-Abschnitt gegen jede Aussage, " + _COSINE + "; der höchste Wert. Ist der Abschnitt mehr als viermal so lang wie die Chunk-Zielgröße (Median der Aussagenlänge × Chunk-Faktor, 15 bis 80 Wörter), zusätzlich Fenster dieser Größe; der höhere Wert aus Ganztext und bestem Fenster gewinnt.",
+    ("Abschnitte", "Kosinus AI-Aussage (ganzer Abschnitt)"): "Embedding des ganzen Wettbewerber-Abschnitts gegen das Embedding der in „Nächste AI-Aussage“ genannten Aussage, " + _COSINE + ", ohne Fenster.",
     ("Abschnitte", "Priorität"): "Kosinus AI-Aussage minus Kosinus, auf vier Stellen gerundet.",
 }
 
