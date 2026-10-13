@@ -21,7 +21,17 @@ MIN_TARGET = 15
 MAX_TARGET = 80
 MAX_HEADING_WORDS = 10
 MAX_LEAD_WORDS = 5
-MAX_STATEMENT_WORDS = 60
+MIN_STATEMENT_WORDS = 6  # a shorter sentence has no statement of its own and stays with its neighbour
+# A sentence that opens with one of these refers to the sentence before it ("Das spendet Trost.") and is
+# no statement on its own. The formal "Sie" / "Ihr" are left out on purpose: they open self-contained
+# sentences; so are "So", "Auch" and "Hier", which open how-to sentences as often as references.
+REFERENCE_OPENERS = frozenset(
+    "es er ihm ihn dabei dadurch damit dafür davon dazu dort zudem außerdem daher deshalb darum dann denn "
+    "trotzdem dennoch allerdings jedoch ebenso ebenfalls hierbei hierfür hierzu danach zuvor weiterhin "
+    "zusätzlich stattdessen andernfalls sonst".split())
+# "Das" and "Dies…" are pronouns only when a verb follows ("Das spendet Trost"); before a capitalised noun
+# they are articles ("Das BAFA zahlt …", "Dieser Ratgeber zeigt …") and the sentence stands on its own.
+DEMONSTRATIVE_OPENERS = frozenset("das dies diese dieser dieses diesen diesem".split())
 MIN_FALLBACK_SENTENCES = 6
 INTRO_LABEL = "Einleitung"
 _SIMILARITY_EPS = 1e-6
@@ -148,14 +158,50 @@ def _fold_empty(drafts: list[_Draft]) -> list[_Draft]:
     return out
 
 
-def _split_long(texts: list[str]) -> list[str]:
-    out: list[str] = []
-    for text in texts:
-        if count_words(text) > MAX_STATEMENT_WORDS:
-            out.extend(split_sentences(text))
+_FIRST_WORDS = re.compile(r"^[\W_]*([^\W\d_]+)\W+(\S+)?")
+
+
+def _refers_back(sentence: str) -> bool:
+    match = _FIRST_WORDS.match(sentence)
+    if not match:
+        return False
+    first, second = match.group(1).lower(), match.group(2) or ""
+    if first in REFERENCE_OPENERS:
+        return True
+    return first in DEMONSTRATIVE_OPENERS and bool(second) and second[0].islower()
+
+
+def split_statement(text: str) -> list[str]:
+    """A line with several sentences becomes several statements: the unit of a fact is the sentence.
+
+    Two guards keep fragments from becoming statements of their own: a sentence that refers back to
+    its predecessor (opens with a word from REFERENCE_OPENERS) or is shorter than MIN_STATEMENT_WORDS
+    stays attached to the sentence before it (the first sentence attaches to the one after it).
+    A lead-in label ("Die Fahrt: ...") is carried into every statement of the line.
+    """
+    label, body = "", text
+    lead = _LEAD_IN.match(text)
+    if lead and count_words(lead["label"]) <= MAX_LEAD_WORDS:
+        label, body = lead["label"].strip(), lead["rest"].strip()
+    sentences = split_sentences(body)
+    if len(sentences) <= 1:
+        return [text]
+    groups: list[str] = []
+    for sentence in sentences:
+        if groups and (_refers_back(sentence) or count_words(sentence) < MIN_STATEMENT_WORDS):
+            groups[-1] = f"{groups[-1]} {sentence}"
         else:
-            out.append(text)
-    return out
+            groups.append(sentence)
+    if len(groups) >= 2 and count_words(groups[0]) < MIN_STATEMENT_WORDS:
+        groups[1] = f"{groups[0]} {groups[1]}"
+        del groups[0]
+    if len(groups) == 1:
+        return [text]
+    return [f"{label}: {group}" if label else group for group in groups]
+
+
+def _split_long(texts: list[str]) -> list[str]:
+    return [part for text in texts for part in split_statement(text)]
 
 
 def _semantic_topics(sentences: list[str], embed: Embed) -> Optional[list[_Draft]]:

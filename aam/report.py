@@ -299,7 +299,7 @@ COLUMN_EXPLANATIONS = {
     ("Themen", "unter Durchschnitt"): "Nur ohne Quellen: Aussagen zwischen schlechtestem Viertel und Mitte.",
     # ---- Aussagen
     ("Aussagen", "Thema"): "Das Thema, zu dem die Aussage gehört.",
-    ("Aussagen", "Aussage (AI-Chunk)"): "Eine einzelne Aussage der AI-Antwort: eine Zeile, ein Bullet oder ein Satz. Das ist die Einheit, die Google aus einer Quelle zieht.",
+    ("Aussagen", "Aussage (AI-Chunk)"): "Eine einzelne Aussage der AI-Antwort: eine Zeile, ein Bullet oder ein Satz. Ein Bullet mit mehreren Sätzen wird in Sätze geteilt, sein Label („Die Fahrt:“) bleibt an jedem Satz; Sätze, die nur auf den Satz davor verweisen („Das spendet Trost.“), bleiben an ihm hängen. Das ist die Einheit, die Google aus einer Quelle zieht.",
     ("Aussagen", "Wortzahl"): "Länge der Aussage in Wörtern. Der Median aller Aussagen bestimmt, wie groß deine Chunks geschnitten werden.",
     ("Aussagen", "Beste eigene URL"): "Deine Seite mit dem Absatz, der dieser Aussage am nächsten kommt.",
     ("Aussagen", "Bester eigener Chunk"): "Dieser Absatz im Wortlaut.",

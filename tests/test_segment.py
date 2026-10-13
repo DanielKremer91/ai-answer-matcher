@@ -243,3 +243,47 @@ def test_content_factor_scales_the_target_but_not_the_median():
     assert answer.median_words == 12.0 and answer.target_words == 18 and answer.content_factor == 1.5
     assert derive_target([20, 30], 2.0) == (50, 25.0)
     assert derive_target([5, 5, 6], 1.5) == (15, 5.0)  # still clamped
+
+
+from aam.segment import split_statement
+
+
+FAHRT = ("Die Fahrt: Transportieren Sie den Welpen gesichert in einer Transportbox oder auf dem Schoß einer Begleitperson "
+         "(ausgelegt mit einem Handtuch für eventuelle Reiseübelkeit). Bringen Sie vom Züchter eine Decke mit, die nach "
+         "der Mutter und den Geschwistern riecht – das spendet Trost.")
+
+
+def test_a_bullet_with_several_sentences_becomes_several_statements_with_its_label():
+    parts = split_statement(FAHRT)
+    assert len(parts) == 2
+    assert parts[0].startswith("Die Fahrt: Transportieren Sie den Welpen") and parts[0].endswith("Reiseübelkeit).")
+    assert parts[1].startswith("Die Fahrt: Bringen Sie vom Züchter") and parts[1].endswith("das spendet Trost.")
+
+
+def test_sentences_that_refer_back_or_are_short_stay_with_their_predecessor():
+    text = ("Geben Sie dem Welpen in den ersten Tagen viel Ruhe. Das ist wichtig für ihn. Dann klappt die Eingewöhnung. "
+            "Sie sollten Besuch in der ersten Woche vermeiden. Ganz sicher.")
+    parts = split_statement(text)
+    assert parts == ["Geben Sie dem Welpen in den ersten Tagen viel Ruhe. Das ist wichtig für ihn. Dann klappt die Eingewöhnung.",
+                     "Sie sollten Besuch in der ersten Woche vermeiden. Ganz sicher."]
+
+
+def test_single_sentence_lines_and_lines_that_collapse_to_one_group_stay_whole():
+    long = "Eine Dachsanierung kostet je nach Umfang, Material, Dachform und Zustand des Dachstuhls zwischen 100 und 300 Euro pro Quadratmeter, wie Fachbetriebe berichten."
+    assert split_statement(long) == [long]
+    referring = "Ruhe geben. Das ist wichtig. Dann klappt es."
+    assert split_statement(referring) == [referring]
+
+
+def test_a_short_first_sentence_joins_the_next_one():
+    text = "Kurz gesagt. Die KfW fördert die Dachdämmung mit zinsgünstigen Krediten. Das BAFA zahlt Zuschüsse von bis zu 20 Prozent."
+    assert split_statement(text) == ["Kurz gesagt. Die KfW fördert die Dachdämmung mit zinsgünstigen Krediten.",
+                                     "Das BAFA zahlt Zuschüsse von bis zu 20 Prozent."]
+
+
+def test_segment_answer_splits_bullets_inside_a_topic_and_keeps_the_label():
+    text = "Ankunft\n- " + FAHRT + "\n- Erste Nacht: Lassen Sie den Welpen nah bei sich schlafen."
+    answer = segment_answer("welpe", text)
+    [topic] = answer.topics
+    assert [s.text[:30] for s in topic.statements] == ["Die Fahrt: Transportieren Sie ", "Die Fahrt: Bringen Sie vom Züc",
+                                                        "Erste Nacht: Lassen Sie den We"]
