@@ -35,7 +35,7 @@ def test_topics_frame_with_sources():
     df = topics_frame(sample_result())
     assert list(df.columns) == ["Keyword/Prompt", "Thema", "Anzahl Aussagen", "Beste eigene URL",
                                 "Bester eigener Chunk", "Score", "Beste Quell-URL", "Bester Quell-Chunk",
-                                "Score Quelle", "Delta", "abgedeckt", "schwach", "Lücke"]
+                                "Score Quelle", "Delta", "Vergleich", "abgedeckt", "schwach", "Lücke"]
     assert list(df["Thema"]) == ["Einleitung", "Kosten im Überblick", "Förderung"]
     row = df[df["Thema"] == "Förderung"].iloc[0]
     assert (row["Anzahl Aussagen"], row["Lücke"], row["abgedeckt"]) == (2, 2, 0)
@@ -63,7 +63,7 @@ def test_frames_without_sources_drop_the_source_columns():
     for df in (topics, statements):
         assert not {"Beste Quell-URL", "Bester Quell-Chunk", "Score Quelle", "Delta"} & set(df.columns)
     assert "Nähe zum Quell-Chunk" not in statements.columns
-    assert list(topics.columns[-4:]) == list(QUARTILE_LABELS)
+    assert list(topics.columns[-4:]) == list(QUARTILE_LABELS) and "Vergleich" in topics.columns
     assert statements.columns[-1] == "Status"
 
 
@@ -354,3 +354,8 @@ def test_explanation_sheet_covers_every_column_of_every_sheet():
                 assert (sheet, column) in explained or (sheet, column) == (sheet, "Keyword/Prompt"), (sheet, column)
         assert ("alle", "Keyword/Prompt") in explained
         assert all(len(text) > 15 for text in legend["Bedeutung"])
+
+
+def test_topics_frame_names_the_window_size():
+    df = topics_frame(sample_result())
+    assert df["Vergleich"].str.startswith("Fenster (").all()

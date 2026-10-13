@@ -183,3 +183,20 @@ def match(answer: SegmentedAnswer, statement_vectors: Sequence[np.ndarray], chun
 
     return MatchResult(pages, topic_matches, statement_matches, has_sources,
                        DELTA_LABELS if has_sources else QUARTILE_LABELS, statement_pages)
+
+
+def with_topic_hits(matched: MatchResult, hits: dict) -> MatchResult:
+    """Replace the chunk-level topic hits by topic-window hits; counts and statuses stay as they are."""
+    import dataclasses
+
+    topics = []
+    for t in matched.topics:
+        entry = hits.get(t.topic.id)
+        if entry is None:
+            topics.append(t)
+            continue
+        own_hit, source_hit, words = entry
+        delta = (own_hit.score - source_hit.score) if source_hit is not None else None
+        topics.append(dataclasses.replace(t, own=own_hit, source=source_hit, delta=delta,
+                                          window_words=words, method="Fenster"))
+    return dataclasses.replace(matched, topics=topics)

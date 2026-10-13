@@ -333,7 +333,8 @@ def show_result(result, shown_warnings=()) -> None:
         st.caption("Ganze AI-Antwort gegen ganze Seite. Eigene Seiten und Quellen in einem Ranking.")
         st.dataframe(report.pages_frame(result), width="stretch", hide_index=True)
     with tab_topics:
-        st.caption("Bester Chunk der eigenen Domain pro Themengebiet der AI-Antwort.")
+        st.caption("Pro Thema der AI-Antwort die beste Passage deiner Seiten und der Quellen. Die Passagen sind so groß "
+                   "wie das Thema (Spalte „Vergleich“), nicht so klein wie ein einzelner Chunk.")
         st.dataframe(report.topics_frame(result), width="stretch", hide_index=True)
     with tab_statements:
         st.caption("Bester Chunk der eigenen Domain pro einzelner Aussage (AI-Chunk).")

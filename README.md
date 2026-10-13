@@ -136,7 +136,7 @@ Mit OpenAI oder Gemini gehen die Texte der AI-Antwort, deines Contents und der Q
 | Tabelle | Inhalt |
 |---|---|
 | Seiten | Ranking aller Seiten (eigene und Quellen) nach Ähnlichkeit zur ganzen AI-Antwort |
-| Themen | Bester Chunk deiner Domain pro Themengebiet, im Vergleich zum besten Quell-Chunk |
+| Themen | Beste Passage deiner Domain pro Themengebiet der AI-Antwort, in Themengröße geschnitten, im Vergleich zur besten Passage der Quellen |
 | Aussagen | Bester Chunk deiner Domain pro Aussage, mit Abstand zur besten Quelle, der Nähe zum Quell-Chunk (Cosinus der beiden besten Chunks, nur mit Quell-URLs) und Status |
 | Aussage × Seite | Jede Aussage gegen jede Seite: bester Chunk der Seite und Relevanz der Seite als Ganzes |
 

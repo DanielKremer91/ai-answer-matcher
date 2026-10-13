@@ -72,12 +72,12 @@ def test_second_analysis_reuses_cached_embeddings():
     prepared = prepare(KEYWORD, ANSWER, own_docs=OWN_DOCS, source_docs=SOURCE_DOCS)
     seen = []
     analyze(prepared, provider, cache, progress=lambda done, total: seen.append((done, total)))
-    assert provider.calls == 10 and seen[-1] == (10, 10)
+    assert provider.calls == 12 and seen[-1] == (12, 12)  # + topic windows of the two topics with content
     analyze(prepared, provider, cache, weak_delta=0.3)
-    assert provider.calls == 10
+    assert provider.calls == 12
     fresh = prepare(KEYWORD, ANSWER, own_docs=OWN_DOCS, source_docs=SOURCE_DOCS)
     analyze(fresh, provider, cache)
-    assert provider.calls == 10
+    assert provider.calls == 12
 
 
 def test_rematch_applies_new_thresholds_without_embedding():
@@ -373,3 +373,30 @@ def test_page_texts_carry_no_heading_markers():
     assert "#" not in prepared.page_texts[(OWN, own.url)]
     assert prepared.page_texts[(OWN, own.url)].startswith("Kosten\nDie Sanierung")
     assert prepared.page_texts[(SOURCE, src.url)] == "Titel\nTief\nText der Quelle steht hier im Detail."
+
+
+def test_topics_are_scored_with_topic_sized_windows():
+    result = sample_result()
+    by_label = {t.topic.label: t for t in result.match.topics}
+    foerderung = by_label["Förderung"]
+    assert foerderung.method == "Fenster" and foerderung.window_words >= 15
+    assert foerderung.source is not None and foerderung.source.url == "https://quelle.de/foerderung"
+    assert foerderung.source.score > foerderung.own.score  # the source page holds both statements as one passage
+    assert "KfW" in foerderung.source.text and "BAFA" in foerderung.source.text
+    kosten = by_label["Kosten im Überblick"]
+    assert kosten.own.url == "https://me.de/kosten" and kosten.method == "Fenster"
+    assert result.topic_hits and set(result.topic_hits) <= {t.topic.id for t in result.match.topics}
+
+
+def test_rematch_keeps_the_topic_window_hits():
+    result = sample_result()
+    again = rematch(result, covered_delta=0.3, weak_delta=0.4)
+    for before, after in zip(result.match.topics, again.match.topics):
+        assert (before.own, before.source, before.method) == (after.own, after.source, after.method)
+    assert (again.meta.covered_delta, again.meta.weak_delta) == (0.3, 0.4)
+
+
+def test_reused_chunk_export_falls_back_to_chunk_level_topics():
+    prepared = prechunked(sample_result(), source_docs=[])
+    result = analyze(prepared, FakeProvider(), None)
+    assert all(t.method == "Chunks" and t.window_words == 0 for t in result.match.topics)

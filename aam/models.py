@@ -106,6 +106,8 @@ class TopicMatch:
     source: Optional[Hit]
     delta: Optional[float]
     counts: dict  # status label -> number of statements
+    window_words: int = 0  # size of the topic-sized windows the hits come from; 0 = chunk level
+    method: str = "Chunks"  # "Fenster" when the hits are topic-sized windows of the pages
 
 
 @dataclass(frozen=True)
@@ -173,3 +175,4 @@ class Result:
     source_stats: Optional[ChunkStats]
     statement_vectors: list  # kept so thresholds can change without re-embedding
     page_vectors: dict = field(default_factory=dict)  # (origin, url) -> whole-text vector where available
+    topic_hits: dict = field(default_factory=dict)  # topic id -> (own Hit, source Hit|None, window_words); kept for rematch

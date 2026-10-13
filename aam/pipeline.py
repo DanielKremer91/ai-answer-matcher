@@ -13,7 +13,8 @@ from aam.chunk import chunk_documents, stats_for
 from aam.embeddings import EmbeddingProvider, embed_cached, fits_whole_text
 from aam.ingest.chunks_file import check_dimension
 from aam.ingest.urls import url_key
-from aam.match import match
+from aam.match import match, with_topic_hits
+from aam.topics import topic_hits
 from aam.models import OWN, SOURCE, Chunk, ChunkStats, Document, FailedUrl, Result, RunMeta, SegmentedAnswer
 from aam.sections import plain_text
 from aam.segment import Embed, segment_answer
@@ -124,6 +125,7 @@ class _StagedEmbedder:
     def _report(self, done: int) -> None:
         if self._progress and done > self._reported:
             self._reported = done
+            self._total = max(self._total, done)  # topic windows are embedded after the initial count
             self._progress(done, self._total)
 
     def embed(self, texts: Sequence[str]) -> list[Optional[np.ndarray]]:
@@ -184,6 +186,9 @@ def analyze(prepared: Prepared, provider: EmbeddingProvider, cache, *, covered_d
     pages = {(c.origin, c.url) for c in own + sources}
     matched = match(prepared.answer, statement_vectors, own + sources,
                     covered_delta=covered_delta, weak_delta=weak_delta, page_vectors=page_vectors)
+    hits = topic_hits(prepared.answer, statement_vectors, prepared.page_texts, page_vectors,
+                      lambda texts: embedder.embed(texts), prepared.answer.content_factor)
+    matched = with_topic_hits(matched, hits)
     meta = RunMeta(
         keyword=prepared.answer.keyword,
         date=(today or date.today()).isoformat(),
@@ -203,7 +208,7 @@ def analyze(prepared: Prepared, provider: EmbeddingProvider, cache, *, covered_d
         mean_pages=len(pages - set(page_vectors)),
     )
     return Result(meta, matched, prepared.answer, own, sources, prepared.own_stats, prepared.source_stats,
-                  list(statement_vectors), page_vectors)
+                  list(statement_vectors), page_vectors, hits)
 
 
 def _require_statement_vectors(vectors: Sequence[Optional[np.ndarray]]) -> None:
@@ -215,5 +220,6 @@ def rematch(result: Result, *, covered_delta: float, weak_delta: float) -> Resul
     """New thresholds on an existing result; no embedding call."""
     matched = match(result.answer, result.statement_vectors, result.own_chunks + result.source_chunks,
                     covered_delta=covered_delta, weak_delta=weak_delta, page_vectors=result.page_vectors)
+    matched = with_topic_hits(matched, result.topic_hits)
     meta = dataclasses.replace(result.meta, covered_delta=covered_delta, weak_delta=weak_delta)
     return dataclasses.replace(result, meta=meta, match=matched)

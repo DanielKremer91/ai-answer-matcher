@@ -7,6 +7,7 @@ from datetime import date
 import numpy as np
 import pytest
 
+from aam.embeddings import embed_cached
 from aam.gap import (METHOD_WHOLE, METHOD_WINDOW_COMPETITOR, METHOD_WINDOW_OWN, WINDOW_ALL_UP_TO, GapPage, GapResult,
                      GapRow, analyze_gap)
 from aam.models import OWN, SOURCE, Document
@@ -411,3 +412,15 @@ def test_single_section_note_also_fires_for_a_page_with_one_heading_section():
     (gap_page,) = run([comp], [own_page()]).pages
     assert gap_page.level == 2 and gap_page.sections == 1
     assert gap_page.note == ONE_SECTION
+
+
+def test_statement_score_uses_statement_sized_windows_of_long_sections():
+    answer = segment_answer("kw", ANSWER)
+    statement = "Die KfW fördert die Dachdämmung mit zinsgünstigen Krediten."
+    filler = " ".join(f"Fuellwort{i} steht hier als Beispieltext ohne Bezug zum Thema Nummer {i} Ende." for i in range(30))
+    competitor = Document("https://wett.de/lang", "## Förderung\n" + filler + " " + statement + " " + filler, SOURCE)
+    own = Document("https://me.de/a", "## Kosten\nEine Neueindeckung kostet 100 Euro pro Quadratmeter.", OWN)
+    result = run([competitor], [own], answer=answer)
+    row = result.pages[0].rows[0]
+    assert row.statement is not None and row.statement.text == statement
+    assert row.statement_score > 0.5  # a window holding the statement; the whole 400-word section scores < 0.2

@@ -151,7 +151,19 @@ def analyze_gap(competitors: Sequence[Document], own: Sequence[Document], embed:
                     window_texts[key] = windows if len(windows) > 1 else []
                 windowed[index] = key
             plans[id(c)] = (whole, windowed)
-    to_embed = list(dict.fromkeys(w for ws in window_texts.values() for w in ws))
+    # Statement windows: a 15-word statement against a 200-word section is diluted, so every competitor
+    # section that is more than LENGTH_RATIO times the median statement length also gets windows of
+    # statement size; the statement score is the better of whole section and best window.
+    statement_windows: dict[str, list[str]] = {}
+    if statements:
+        statement_target = max(MIN_TARGET, min(MAX_TARGET, int(np.median([st.words for st in statements]))))
+        for side in comp_sides:
+            for c in side.sections:
+                if c.words > LENGTH_RATIO * statement_target:
+                    windows = long_windows(c.embed_text, statement_target)
+                    statement_windows[c.embed_text] = windows if len(windows) > 1 else []
+    to_embed = list(dict.fromkeys([w for ws in window_texts.values() for w in ws]
+                                  + [w for ws in statement_windows.values() for w in ws]))
     window_vectors: dict[str, np.ndarray] = {}
     if to_embed:
         window_vectors = {w: _unit(v) for w, v in zip(to_embed, embed(to_embed)) if v is not None}
@@ -190,7 +202,14 @@ def analyze_gap(competitors: Sequence[Document], own: Sequence[Document], embed:
             statement, statement_score = None, None
             if statement_vectors:
                 cv = section_vec(c)
-                statement, statement_score = max(((st, float(cv @ v)) for st, v in statement_vectors),
+                window_vecs = [window_vectors[w] for w in statement_windows.get(c.embed_text, ()) if w in window_vectors]
+
+                def statement_fit(v: np.ndarray) -> float:
+                    whole_fit = float(cv @ v)
+                    best_window = max((float(wv @ v) for wv in window_vecs), default=whole_fit)
+                    return max(whole_fit, best_window)
+
+                statement, statement_score = max(((st, statement_fit(v)) for st, v in statement_vectors),
                                                  key=lambda item: item[1])
                 statement_score = min(1.0, statement_score)
             rows.append(GapRow(c, o, min(1.0, score), windowed, window, statement, statement_score, rank, method))

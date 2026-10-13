@@ -122,7 +122,7 @@ Pro URL (eigen und Quelle gemischt): Seitenscore = Kosinus(Seitenvektor, Antwort
 
 Pro Aussage: bester eigener Chunk (URL, Text, Score) über die gesamte Domain; bester Quell-Chunk (URL, Text, Score); Delta = eigener Score − Quell-Score.
 
-Pro Thema: Themenvektor = längengewichteter Mittelwert seiner Aussagen-Vektoren. Bester eigener Chunk und bester Quell-Chunk gegen den Themenvektor, Delta, dazu die Anzahl Aussagen und wie viele davon abgedeckt, schwach oder Lücke sind.
+Pro Thema: Themenvektor = längengewichteter Mittelwert seiner Aussagen-Vektoren. Weil ein Thema mehrere Aussagen bündelt und ein Chunk nur eine trägt, werden für den Themenvergleich eigene Fenster gebildet: Zielgröße = Wortzahl des Themas mal Chunk-Faktor (15 bis 300 Wörter), über die Seiten geschoben (die zehn besten eigenen Seiten nach Seitenvektor und alle Quellen), bestes Fenster zählt. Daraus bester eigener Treffer, bester Quell-Treffer, Delta und die Spalte „Vergleich“ (Fenstergröße). Bei wiederverwendeten Chunk-Exporten ohne Seitentext bleibt es beim besten Chunk. Dazu die Anzahl Aussagen und wie viele davon abgedeckt, schwach oder Lücke sind.
 
 ### 7.2a Aussage gegen Seite
 
