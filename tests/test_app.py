@@ -561,15 +561,15 @@ def test_gap_mode_compares_sections_and_offers_the_excel(backend):
     at.run()
     assert not at.exception and not at.error
     frame = at.dataframe[0].value
-    assert "Kosinus" in frame.columns and len(frame) == 2
+    assert "Kosinus eigen" in frame.columns and len(frame) == 2
     assert "Text Wettbewerber" not in frame.columns and "Text eigen" not in frame.columns
     assert "Nächste AI-Aussage" not in frame.columns
-    assert list(frame["Kosinus"]) == sorted(frame["Kosinus"], reverse=True)
+    assert list(frame["Kosinus eigen"]) == sorted(frame["Kosinus eigen"], reverse=True)
     assert "https://quelle.de/foerderung" in at.code[0].value and "Abschnittsebene H2" in at.code[0].value
     summary = gap_report.gap_summary(at.session_state["gap_result"])
     assert summary.startswith("https://quelle.de/foerderung: 2 Abschnitte, 2 Aussagen.")
     assert summary in [m.value for m in at.markdown]
-    assert "Vergleich" in frame.columns and "Urteil" in frame.columns
+    assert "Vergleichsart" in frame.columns and "Urteil" in frame.columns
     statements = at.dataframe[1].value
     assert "Status" in statements.columns and "Referenz Nachbarn" in statements.columns
     assert "Bester eigener Chunk" not in statements.columns
@@ -601,7 +601,7 @@ def test_gap_mode_texts_show_the_best_window_with_its_method(backend):
     at.run()
     assert not at.exception and not at.error
     frame = at.dataframe[0].value
-    assert "Fenster aus eigenem Abschnitt" in set(frame["Vergleich"])
+    assert "Fenster aus eigenem Abschnitt" in set(frame["Vergleichsart"])
     expander = next(e for e in at.expander if e.label == "Texte nachlesen")
     assert any(m.value == "Bestes Fenster (Fenster aus eigenem Abschnitt)" for m in expander.markdown)
     assert any(t.value == passage for t in expander.text)
@@ -646,7 +646,7 @@ def test_gap_mode_reads_competitor_and_own_pages_from_uploads(backend):
     button(at, "Abschnitte vergleichen").click()
     at.run()
     assert not at.exception and not at.error
-    assert "Kosinus" in at.dataframe[0].value.columns
+    assert "Kosinus eigen" in at.dataframe[0].value.columns
     assert backend.fetched == []
 
 

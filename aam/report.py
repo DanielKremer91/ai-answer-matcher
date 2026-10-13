@@ -17,6 +17,8 @@ MATRIX_MAX_PAGES = 15  # more pages than this do not fit a readable matrix
 ORIGIN_LABELS = {OWN: "eigen", SOURCE: "Quelle"}
 METHOD_LABELS = {"structure": "Struktur", "semantic": "semantisch"}
 _SOURCE_COLUMNS = ["Beste Quell-URL", "Bester Quell-Chunk", "Score Quelle", "Delta"]
+_TOPIC_SOURCE_COLUMNS = ["Beste Quell-URL", "Beste Quell-Passage", "Score Quelle", "Delta"]
+TOPIC_PASSAGE_FROM_EXPORT = "Chunks aus Export"
 _ILLEGAL_XML_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 _FORMULA_START = re.compile(r"^\s*[=+\-@]")
 _EXCEL_CELL_LIMIT = 32767
@@ -106,10 +108,10 @@ def topics_frame(result: Result) -> pd.DataFrame:
     has_sources = result.match.has_sources
     labels = list(result.match.status_labels)
     rows = [[t.topic.label, len(t.topic.statements)] + _hit_cells(t, has_sources)
-            + [f"Fenster ({t.window_words} Wörter)" if t.method == "Fenster" else "Chunks"]
+            + [f"Fenster ({t.window_words} Wörter)" if t.method == "Fenster" else TOPIC_PASSAGE_FROM_EXPORT]
             + [t.counts.get(label, 0) for label in labels] for t in result.match.topics]
-    columns = (["Thema", "Anzahl Aussagen", "Beste eigene URL", "Bester eigener Chunk", "Score"]
-               + (_SOURCE_COLUMNS if has_sources else []) + ["Vergleich"] + labels)
+    columns = (["Thema", "Anzahl Aussagen", "Beste eigene URL", "Beste eigene Passage", "Score eigen"]
+               + (_TOPIC_SOURCE_COLUMNS if has_sources else []) + ["Passagengröße"] + labels)
     return _frame(rows, columns, result.meta.keyword)
 
 
@@ -118,7 +120,7 @@ def statements_frame(result: Result) -> pd.DataFrame:
     rows = [[m.topic_label, m.statement.text, m.statement.words] + _hit_cells(m, has_sources)
             + ([_score(m.own_vs_source)] if has_sources else []) + [m.status]
             for m in result.match.statements]
-    columns = (["Thema", "Aussage (AI-Chunk)", "Wortzahl", "Beste eigene URL", "Bester eigener Chunk", "Score"]
+    columns = (["Thema", "Aussage (AI-Chunk)", "Wortzahl", "Beste eigene URL", "Bester eigener Chunk", "Score eigen"]
                + (_SOURCE_COLUMNS + ["Nähe zum Quell-Chunk"] if has_sources else []) + ["Status"])
     return _frame(rows, columns, result.meta.keyword)
 
@@ -282,13 +284,13 @@ COLUMN_EXPLANATIONS = {
     ("Themen", "Thema"): "Ein Abschnitt der AI-Antwort, erkannt an einer Überschrift oder einem fetten Einleitungswort. „Einleitung“ = Text vor der ersten Überschrift.",
     ("Themen", "Anzahl Aussagen"): "Wie viele Aussagen der AI-Antwort zu diesem Thema gehören.",
     ("Themen", "Beste eigene URL"): "Deine Seite mit der Passage, die dem Thema am nächsten kommt.",
-    ("Themen", "Bester eigener Chunk"): "Diese Passage im Wortlaut.",
-    ("Themen", "Score"): "Wie nah deine beste Passage am Thema liegt. " + _SCORE_NOTE,
+    ("Themen", "Beste eigene Passage"): "Diese Passage im Wortlaut: ein Fenster in Themengröße aus deiner Seite, nicht ein Chunk aus Schritt 4.",
+    ("Themen", "Score eigen"): "Wie nah deine beste Passage am Thema als Ganzem liegt. " + _SCORE_NOTE,
     ("Themen", "Beste Quell-URL"): "Die Quelle mit der Passage, die dem Thema am nächsten kommt.",
-    ("Themen", "Bester Quell-Chunk"): "Diese Passage im Wortlaut.",
+    ("Themen", "Beste Quell-Passage"): "Diese Passage im Wortlaut, ein Fenster in Themengröße aus der Quelle.",
     ("Themen", "Score Quelle"): "Wie nah die beste Passage der Quellen am Thema liegt.",
-    ("Themen", "Delta"): "Score minus Score Quelle. Unter null heißt: Die Quelle hat die bessere Passage zum Thema.",
-    ("Themen", "Vergleich"): "„Fenster (n Wörter)“: Für dieses Thema wurden deine Seiten und die Quellen in Passagen von etwa n Wörtern geschnitten (Themenlänge mal Chunk-Faktor); die beste Passage zählt. „Chunks“: nur bei wiederverwendeten Chunk-Exporten, dort zählt der beste einzelne Chunk.",
+    ("Themen", "Delta"): "Score eigen minus Score Quelle. Unter null heißt: Die Quelle hat die bessere Passage zum Thema.",
+    ("Themen", "Passagengröße"): "„Fenster (n Wörter)“: Für dieses Thema wurden deine Seiten und die Quellen in Passagen von etwa n Wörtern geschnitten (Wortzahl des Themas mal Chunk-Faktor); die beste Passage zählt. „Chunks aus Export“: nur bei wiederverwendeten Chunk-Exporten ohne Seitentext, dort zählt der beste einzelne Chunk.",
     ("Themen", "abgedeckt"): "Wie viele Aussagen dieses Themas den Status „abgedeckt“ haben.",
     ("Themen", "schwach"): "Wie viele Aussagen dieses Themas den Status „schwach“ haben.",
     ("Themen", "Lücke"): "Wie viele Aussagen dieses Themas den Status „Lücke“ haben.",
@@ -301,11 +303,11 @@ COLUMN_EXPLANATIONS = {
     ("Aussagen", "Wortzahl"): "Länge der Aussage in Wörtern. Der Median aller Aussagen bestimmt, wie groß deine Chunks geschnitten werden.",
     ("Aussagen", "Beste eigene URL"): "Deine Seite mit dem Absatz, der dieser Aussage am nächsten kommt.",
     ("Aussagen", "Bester eigener Chunk"): "Dieser Absatz im Wortlaut.",
-    ("Aussagen", "Score"): "Wie nah dein bester Absatz an der Aussage liegt. " + _SCORE_NOTE,
+    ("Aussagen", "Score eigen"): "Wie nah dein bester Absatz an der Aussage liegt. " + _SCORE_NOTE,
     ("Aussagen", "Beste Quell-URL"): "Die Quelle mit dem Absatz, der der Aussage am nächsten kommt. Vermutlich die Stelle, aus der die AI die Aussage gezogen hat.",
     ("Aussagen", "Bester Quell-Chunk"): "Dieser Absatz im Wortlaut.",
     ("Aussagen", "Score Quelle"): "Wie nah der beste Absatz der Quellen an der Aussage liegt.",
-    ("Aussagen", "Delta"): "Score minus Score Quelle: Wie weit dein bester Absatz hinter dem besten Absatz der Quellen liegt. Unter null heißt: Die Quelle ist näher dran.",
+    ("Aussagen", "Delta"): "Score eigen minus Score Quelle: Wie weit dein bester Absatz hinter dem besten Absatz der Quellen liegt. Unter null heißt: Die Quelle ist näher dran.",
     ("Aussagen", "Nähe zum Quell-Chunk"): "Wie ähnlich dein bester Absatz und der beste Quell-Absatz einander sind. Hoch heißt: Beide sagen dasselbe.",
     ("Aussagen", "Status"): "Mit Quellen: „abgedeckt“ (Delta über −Schwelle abgedeckt), „schwach“ (zwischen den Schwellen), „Lücke“ (unter −Schwelle schwach). Ohne Quellen: „stark“, „über Durchschnitt“, „unter Durchschnitt“, „schwach“ je nach Viertel deiner eigenen Werte; leer bei weniger als 4 Aussagen.",
     # ---- Aussage x Seite
@@ -339,10 +341,10 @@ COLUMN_CALCULATIONS = {
     ("Seiten", "Aussagen abgedeckt"): "Pro Aussage: bester Chunk dieser Seite minus bester Chunk aller Quellen. Liegt die Differenz über −Schwelle „abgedeckt“, zählt die Aussage.",
     ("Seiten", "Aussagen mit bestem Chunk"): "Pro Aussage wird der Chunk mit dem höchsten Kosinus über alle eigenen Seiten gesucht; gezählt wird, wie oft er auf dieser Seite liegt.",
     ("Seiten", "Seitenvektor"): "Passt der Seitentext in die Grenze des Anbieters, wird er als ein Text eingebettet. Sonst: Mittelwert der Chunk-Embeddings, jeder Chunk mit seiner Wortzahl gewichtet, dann auf Länge 1 normiert.",
-    ("Themen", "Score"): "Themenvektor = Mittelwert der Embeddings aller Aussagen des Themas, mit Wortzahl gewichtet. Deine Seiten werden in Fenster von Themenlänge × Chunk-Faktor geschnitten (Satzgrenzen, ein Satz Überlappung), jedes Fenster eingebettet. Höchster Kosinus zwischen Themenvektor und einem Fenster.",
-    ("Themen", "Score Quelle"): "Wie Score, mit den Fenstern der Quellen.",
-    ("Themen", "Delta"): "Score minus Score Quelle.",
-    ("Themen", "Vergleich"): "Fenstergröße = Wortzahl des Themas × Chunk-Faktor, begrenzt auf 15 bis 300 Wörter. Fenster werden über die zehn eigenen Seiten mit dem höchsten Seitenvektor-Kosinus zum Thema und über alle Quellen gelegt.",
+    ("Themen", "Score eigen"): "Themenvektor = Mittelwert der Embeddings aller Aussagen des Themas, mit Wortzahl gewichtet. Deine Seiten werden in Fenster von Themenlänge × Chunk-Faktor geschnitten (Satzgrenzen, ein Satz Überlappung), jedes Fenster eingebettet. Höchster Kosinus zwischen Themenvektor und einem Fenster.",
+    ("Themen", "Score Quelle"): "Wie Score eigen, mit den Fenstern der Quellen.",
+    ("Themen", "Delta"): "Score eigen minus Score Quelle.",
+    ("Themen", "Passagengröße"): "Fenstergröße = Wortzahl des Themas × Chunk-Faktor, begrenzt auf 15 bis 300 Wörter. Fenster werden über die zehn eigenen Seiten mit dem höchsten Seitenvektor-Kosinus zum Thema und über alle Quellen gelegt.",
     ("Themen", "abgedeckt"): "Anzahl Aussagen des Themas mit diesem Status (Blatt Aussagen, Spalte Status).",
     ("Themen", "schwach"): "Anzahl Aussagen des Themas mit diesem Status.",
     ("Themen", "Lücke"): "Anzahl Aussagen des Themas mit diesem Status.",
@@ -350,9 +352,9 @@ COLUMN_CALCULATIONS = {
     ("Themen", "über Durchschnitt"): "Anzahl Aussagen des Themas mit diesem Status.",
     ("Themen", "unter Durchschnitt"): "Anzahl Aussagen des Themas mit diesem Status.",
     ("Aussagen", "Wortzahl"): "Wörter der Aussage, getrennt an Leerzeichen.",
-    ("Aussagen", "Score"): "Embedding der Aussage gegen das Embedding jedes eigenen Chunks, " + _COSINE + "; der höchste Wert zählt.",
-    ("Aussagen", "Score Quelle"): "Wie Score, mit den Chunks aller Quellen.",
-    ("Aussagen", "Delta"): "Score minus Score Quelle.",
+    ("Aussagen", "Score eigen"): "Embedding der Aussage gegen das Embedding jedes eigenen Chunks, " + _COSINE + "; der höchste Wert zählt.",
+    ("Aussagen", "Score Quelle"): "Wie Score eigen, mit den Chunks aller Quellen.",
+    ("Aussagen", "Delta"): "Score eigen minus Score Quelle.",
     ("Aussagen", "Nähe zum Quell-Chunk"): "Embedding deines besten Chunks gegen das Embedding des besten Quell-Chunks, " + _COSINE + ".",
     ("Aussagen", "Status"): "Mit Quellen aus dem Delta und den beiden Schwellen in der Seitenleiste. Ohne Quellen: Alle Score-Werte sortiert und in Viertel geteilt; oberstes Viertel „stark“, unterstes „schwach“.",
     ("Aussage x Seite", "Rang"): "Pro Aussage alle Seiten nach Bester Chunk Score absteigend sortiert.",

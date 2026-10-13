@@ -34,8 +34,8 @@ def test_pages_frame_with_sources():
 def test_topics_frame_with_sources():
     df = topics_frame(sample_result())
     assert list(df.columns) == ["Keyword/Prompt", "Thema", "Anzahl Aussagen", "Beste eigene URL",
-                                "Bester eigener Chunk", "Score", "Beste Quell-URL", "Bester Quell-Chunk",
-                                "Score Quelle", "Delta", "Vergleich", "abgedeckt", "schwach", "Lücke"]
+                                "Beste eigene Passage", "Score eigen", "Beste Quell-URL", "Beste Quell-Passage",
+                                "Score Quelle", "Delta", "Passagengröße", "abgedeckt", "schwach", "Lücke"]
     assert list(df["Thema"]) == ["Einleitung", "Kosten im Überblick", "Förderung"]
     row = df[df["Thema"] == "Förderung"].iloc[0]
     assert (row["Anzahl Aussagen"], row["Lücke"], row["abgedeckt"]) == (2, 2, 0)
@@ -45,12 +45,12 @@ def test_topics_frame_with_sources():
 def test_statements_frame_with_sources():
     df = statements_frame(sample_result())
     assert list(df.columns) == ["Keyword/Prompt", "Thema", "Aussage (AI-Chunk)", "Wortzahl", "Beste eigene URL",
-                                "Bester eigener Chunk", "Score", "Beste Quell-URL", "Bester Quell-Chunk",
+                                "Bester eigener Chunk", "Score eigen", "Beste Quell-URL", "Bester Quell-Chunk",
                                 "Score Quelle", "Delta", "Nähe zum Quell-Chunk", "Status"]
     assert len(df) == 5
     row = df[df["Aussage (AI-Chunk)"] == "Das BAFA zahlt Zuschüsse von bis zu 20 Prozent."].iloc[0]
     assert (row["Thema"], row["Wortzahl"], row["Status"]) == ("Förderung", 9, "Lücke")
-    assert abs(row["Delta"] - (row["Score"] - row["Score Quelle"])) < 2e-4
+    assert abs(row["Delta"] - (row["Score eigen"] - row["Score Quelle"])) < 2e-4
     closeness = df["Nähe zum Quell-Chunk"]
     assert closeness.notna().all() and all(round(v, 4) == v for v in closeness)
 
@@ -61,9 +61,9 @@ def test_frames_without_sources_drop_the_source_columns():
     assert "Aussagen mit bestem Chunk" in pages.columns and "Aussagen abgedeckt" not in pages.columns
     assert set(pages["Herkunft"]) == {"eigen"}
     for df in (topics, statements):
-        assert not {"Beste Quell-URL", "Bester Quell-Chunk", "Score Quelle", "Delta"} & set(df.columns)
+        assert not {"Beste Quell-URL", "Bester Quell-Chunk", "Beste Quell-Passage", "Score Quelle", "Delta"} & set(df.columns)
     assert "Nähe zum Quell-Chunk" not in statements.columns
-    assert list(topics.columns[-4:]) == list(QUARTILE_LABELS) and "Vergleich" in topics.columns
+    assert list(topics.columns[-4:]) == list(QUARTILE_LABELS) and "Passagengröße" in topics.columns
     assert statements.columns[-1] == "Status"
 
 
@@ -354,7 +354,7 @@ def test_explanation_sheet_covers_every_column_of_every_sheet():
                 assert (sheet, column) in explained or (sheet, column) == (sheet, "Keyword/Prompt"), (sheet, column)
         assert ("alle", "Keyword/Prompt") in explained
         assert all(len(text) > 15 for text in legend["Bedeutung"])
-        measured = {("Seiten", "Seitenscore"), ("Themen", "Score"), ("Aussagen", "Delta"),
+        measured = {("Seiten", "Seitenscore"), ("Themen", "Score eigen"), ("Aussagen", "Delta"),
                     ("Aussage x Seite", "Seiten-Relevanz")}
         how = {(sheet, column): text for sheet, column, text in zip(legend["Blatt"], legend["Spalte"], legend["So ermittelt"])}
         assert all(len(how[key]) > 20 for key in measured)
@@ -363,4 +363,4 @@ def test_explanation_sheet_covers_every_column_of_every_sheet():
 
 def test_topics_frame_names_the_window_size():
     df = topics_frame(sample_result())
-    assert df["Vergleich"].str.startswith("Fenster (").all()
+    assert df["Passagengröße"].str.startswith("Fenster (").all()

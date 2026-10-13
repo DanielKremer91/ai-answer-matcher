@@ -122,7 +122,7 @@ Pro URL (eigen und Quelle gemischt): Seitenscore = Kosinus(Seitenvektor, Antwort
 
 Pro Aussage: bester eigener Chunk (URL, Text, Score) über die gesamte Domain; bester Quell-Chunk (URL, Text, Score); Delta = eigener Score − Quell-Score.
 
-Pro Thema: Themenvektor = längengewichteter Mittelwert seiner Aussagen-Vektoren. Weil ein Thema mehrere Aussagen bündelt und ein Chunk nur eine trägt, werden für den Themenvergleich eigene Fenster gebildet: Zielgröße = Wortzahl des Themas mal Chunk-Faktor (15 bis 300 Wörter), über die Seiten geschoben (die zehn besten eigenen Seiten nach Seitenvektor und alle Quellen), bestes Fenster zählt. Daraus bester eigener Treffer, bester Quell-Treffer, Delta und die Spalte „Vergleich“ (Fenstergröße). Bei wiederverwendeten Chunk-Exporten ohne Seitentext bleibt es beim besten Chunk. Dazu die Anzahl Aussagen und wie viele davon abgedeckt, schwach oder Lücke sind.
+Pro Thema: Themenvektor = längengewichteter Mittelwert seiner Aussagen-Vektoren. Weil ein Thema mehrere Aussagen bündelt und ein Chunk nur eine trägt, werden für den Themenvergleich eigene Fenster gebildet: Zielgröße = Wortzahl des Themas mal Chunk-Faktor (15 bis 300 Wörter), über die Seiten geschoben (die zehn besten eigenen Seiten nach Seitenvektor und alle Quellen), bestes Fenster zählt. Daraus bester eigener Treffer, bester Quell-Treffer, Delta und die Spalte „Passagengröße“ (Fenstergröße). Bei wiederverwendeten Chunk-Exporten ohne Seitentext bleibt es beim besten Chunk. Dazu die Anzahl Aussagen und wie viele davon abgedeckt, schwach oder Lücke sind.
 
 ### 7.2a Aussage gegen Seite
 
@@ -180,8 +180,8 @@ Jedes Blatt hat `Keyword/Prompt` als erste Spalte.
 | Blatt | Spalten |
 |---|---|
 | Seiten | Rang, URL, Herkunft, Seitenscore, Bester Chunk Score, Aussagen abgedeckt, Aussagen gesamt |
-| Themen | Thema, Anzahl Aussagen, Beste eigene URL, Bester eigener Chunk, Score, Beste Quell-URL, Bester Quell-Chunk, Score Quelle, Delta, abgedeckt / schwach / Lücke |
-| Aussagen | Thema, Aussage (AI-Chunk), Wortzahl, Beste eigene URL, Bester eigener Chunk, Score, Beste Quell-URL, Bester Quell-Chunk, Score Quelle, Delta, Status |
+| Themen | Thema, Anzahl Aussagen, Beste eigene URL, Beste eigene Passage, Score eigen, Beste Quell-URL, Beste Quell-Passage, Score Quelle, Delta, abgedeckt / schwach / Lücke |
+| Aussagen | Thema, Aussage (AI-Chunk), Wortzahl, Beste eigene URL, Bester eigener Chunk, Score eigen, Beste Quell-URL, Bester Quell-Chunk, Score Quelle, Delta, Status |
 | Aussage x Seite | Thema, Aussage (AI-Chunk), Rang, URL, Herkunft, Bester Chunk Score, Seiten-Relevanz, Bester Chunk |
 | Chunks | Herkunft, URL, Chunk-Index, Text, Wortzahl (AI-Aussagen, eigene Chunks und Quell-Chunks; ohne Vektoren) |
 | Protokoll | Datum, Provider, Modell, Dimension, Zielgröße, Segmentierungsmethode, Schwellen, Chunk-Statistiken, nicht geladene URLs mit Grund |

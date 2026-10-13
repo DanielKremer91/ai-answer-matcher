@@ -16,7 +16,7 @@ from aam.segment import segment_answer
 from tests.fakes import ANSWER, bow_vector
 
 BASE = ["Keyword/Prompt", "Wettbewerber-URL", "Rang", "Abschnitt (Wettbewerber)", "Wörter",
-        "Beste eigene URL", "Eigener Abschnitt", "Wörter eigen", "Kosinus", "Vergleich", "Bestes Fenster"]
+        "Beste eigene URL", "Eigener Abschnitt", "Wörter eigen", "Kosinus eigen", "Vergleichsart", "Bestes Fenster"]
 VERDICT = ["Aussagen", "abgedeckt", "schwach", "Lücke", "Urteil"]
 AI = ["Nächste AI-Aussage", "Kosinus AI-Aussage", "Kosinus AI-Aussage (ganzer Abschnitt)", "Priorität"]
 TEXTS = ["Text Wettbewerber", "Text eigen"]
@@ -80,9 +80,9 @@ def test_sorting_is_kept_and_values_are_rounded():
     assert list(frame["Wettbewerber-URL"]) == ["https://wett.de/a"] * 3 + ["https://wett.de/b"] * 3
     assert list(frame["Rang"]) == [1, 2, 3, 1, 2, 3]
     first = frame.iloc[:3]
-    assert list(first["Kosinus"]) == sorted(first["Kosinus"], reverse=True)
+    assert list(first["Kosinus eigen"]) == sorted(first["Kosinus eigen"], reverse=True)
     assert first.iloc[2]["Abschnitt (Wettbewerber)"] == "Garantie"
-    assert all(round(v, 4) == v for v in frame["Kosinus"])
+    assert all(round(v, 4) == v for v in frame["Kosinus eigen"])
     assert first.iloc[0]["Text Wettbewerber"] in (KOSTEN, FOERDERUNG)
     assert first.iloc[0]["Beste eigene URL"] == "https://me.de/a"
 
@@ -239,20 +239,20 @@ def test_vergleich_column_follows_kosinus_and_names_the_method():
     result = run(comps=[comp])
     frame = sections_frame(result)
     columns = list(frame.columns)
-    assert columns.index("Vergleich") == columns.index("Kosinus") + 1
-    by_title = frame.set_index("Abschnitt (Wettbewerber)")["Vergleich"]
+    assert columns.index("Vergleichsart") == columns.index("Kosinus eigen") + 1
+    by_title = frame.set_index("Abschnitt (Wettbewerber)")["Vergleichsart"]
     assert by_title["Kosten"] == "Ganztext"
     assert by_title["Lang"] == "Fenster aus Wettbewerber-Abschnitt"
     assert frame.set_index("Abschnitt (Wettbewerber)")["Bestes Fenster"]["Lang"] == FOERDERUNG
     assert frame.set_index("Abschnitt (Wettbewerber)")["Bestes Fenster"]["Kosten"] == ""
     excel = pd.read_excel(io.BytesIO(gap_to_excel(result)), sheet_name="Abschnitte")
-    assert "Vergleich" in excel.columns
+    assert "Vergleichsart" in excel.columns
 
 
 def test_priority_is_ai_closeness_minus_own_coverage():
     answer = segment_answer("dachsanierung kosten", ANSWER)
     frame = sections_frame(run(answer=answer, keyword="dachsanierung kosten"))
-    expected = (frame["Kosinus AI-Aussage"] - frame["Kosinus"]).round(4)
+    expected = (frame["Kosinus AI-Aussage"] - frame["Kosinus eigen"]).round(4)
     assert (frame["Priorität"] == expected).all()
 
 

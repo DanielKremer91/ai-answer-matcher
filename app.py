@@ -358,8 +358,8 @@ def show_result(result, shown_warnings=()) -> None:
         st.caption("Ganze AI-Antwort gegen ganze Seite. Eigene Seiten und Quellen in einem Ranking.")
         st.dataframe(report.pages_frame(result), width="stretch", hide_index=True)
     with tab_topics:
-        st.caption("Pro Thema der AI-Antwort die beste Passage deiner Seiten und der Quellen. Die Passagen sind so groß "
-                   "wie das Thema (Spalte „Vergleich“), nicht so klein wie ein einzelner Chunk.")
+        st.caption("Pro Thema der AI-Antwort die beste Passage deiner Seiten und der Quellen. Die Passagen sind Fenster "
+                   "in Themengröße mal Chunk-Faktor (Spalte „Passagengröße“), nicht die Chunks aus Schritt 4.")
         st.dataframe(report.topics_frame(result), width="stretch", hide_index=True)
     with tab_statements:
         st.caption("Bester Chunk der eigenen Domain pro einzelner Aussage (AI-Chunk).")
@@ -723,7 +723,7 @@ def render_gap() -> None:
             "Die Liste ist **absteigend nach Kosinus sortiert**. Die Zeilen am Ende sind die **Kandidaten für "
             "Lücken**: Themen, die der Wettbewerber behandelt und zu denen du keinen ähnlichen Abschnitt hast. "
             "Ist ein Abschnitt viel länger als der andere, zählt der bessere von Ganztext- und Fensterwert; "
-            "die Spalte „Vergleich“ nennt, woher der Wert stammt. Das ist die **Themen-Ebene**: Hast du zu "
+            "die Spalte „Vergleichsart“ nennt, woher der Wert stammt. Das ist die **Themen-Ebene**: Hast du zu "
             "diesem Thema überhaupt einen Abschnitt?\n\n"
             "Darunter die **Aussagen-Ebene**: Beide Seiten werden innerhalb ihrer Abschnitte in Chunks von ein bis "
             "zwei Sätzen geschnitten. Jeder Wettbewerber-Chunk gilt als eine Aussage und bekommt deinen besten "

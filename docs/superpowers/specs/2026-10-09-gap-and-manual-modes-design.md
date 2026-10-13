@@ -77,7 +77,7 @@ Die untersten Zeilen der Tabelle sind die Lücken. Das Tool schreibt kein „feh
 
 **Fenster-Kandidaten.** Bis `WINDOW_ALL_UP_TO = 40` eigenen Abschnitten bekommt jedes Paar über dem Längenverhältnis Fenster. Darüber besteht die Kandidatenmenge pro Wettbewerber-Abschnitt aus den fünf besten eigenen Abschnitten nach Ganztext-Kosinus und den fünf besten unter den Paaren mit Längenverhältnis über 4 (sonst fällt ein langer eigener Abschnitt, der die Passage enthält, durch die Vorauswahl).
 
-**Wert eines gefensterten Paars.** `Kosinus = max(Ganztext-Wert, bester Fensterwert)`. `GapRow.method` und die Spalte „Vergleich" (nach „Kosinus") nennen die Herkunft: „Ganztext", „Fenster aus Wettbewerber-Abschnitt" (Fenster aus dem längeren Wettbewerber-Text) oder „Fenster aus eigenem Abschnitt". „Bestes Fenster" ist nur gefüllt, wenn das Fenster gewonnen hat.
+**Wert eines gefensterten Paars.** `Kosinus = max(Ganztext-Wert, bester Fensterwert)`. `GapRow.method` und die Spalte „Vergleichsart" (nach „Kosinus eigen") nennen die Herkunft: „Ganztext", „Fenster aus Wettbewerber-Abschnitt" (Fenster aus dem längeren Wettbewerber-Text) oder „Fenster aus eigenem Abschnitt". „Bestes Fenster" ist nur gefüllt, wenn das Fenster gewonnen hat.
 
 **Eingebetteter Text.** Eingebettet und gefenstert wird `Titel\nText` (`Section.embed_text`, auch für die Einleitung mit ihrem Titel); angezeigt wird der Text ohne Titel. So findet ein FAQ-Abschnitt, dessen Überschrift die Frage ist, seinen Gegenpart.
 
