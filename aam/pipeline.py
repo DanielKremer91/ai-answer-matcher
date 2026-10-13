@@ -34,6 +34,7 @@ class Prepared:
     prechunked: bool  # own chunks carry vectors from an uploaded export
     source_target_words: int  # chunk size actually used for the sources
     page_texts: dict = dataclasses.field(default_factory=dict)  # (origin, url) -> full text of the page
+    answer_text: str = ""  # the pasted answer, embedded as one text for the page score when it fits
 
     @property
     def texts_to_embed(self) -> int:
@@ -41,6 +42,8 @@ class Prepared:
         texts = {s.text for s in self.answer.statements}
         texts.update(c.text for c in self._chunks_to_embed())
         texts.update(self.page_texts.values())
+        if self.answer_text.strip():
+            texts.add(self.answer_text.strip())
         return len(texts)
 
     def _chunks_to_embed(self) -> list[Chunk]:
@@ -108,7 +111,7 @@ def prepare(keyword: str, answer_text: str, *, own_docs: Sequence[Document] = ()
     if own_chunks is None:
         page_texts.update({(OWN, d.url): plain_text(d) for d in own_docs if d.text.strip()})
     return Prepared(answer, chunks, source_chunks, own_stats, source_stats, tuple(failed), tuple(warnings),
-                    own_chunks is not None, source_target, page_texts)
+                    own_chunks is not None, source_target, page_texts, answer_text.strip())
 
 
 class _StagedEmbedder:
@@ -150,8 +153,13 @@ def analyze(prepared: Prepared, provider: EmbeddingProvider, cache, *, covered_d
     statement_texts = [s.text for s in statements]
     to_embed = prepared._chunks_to_embed()
     whole_pages = {key: text for key, text in prepared.page_texts.items() if fits_whole_text(provider.name, text)}
+    # The page score compares the whole answer with the whole page, so the answer is embedded as one
+    # text too (it is short; a text over the provider's limit falls back to the mean of the statements).
+    answer_text = prepared.answer_text.strip()
+    whole_answer = answer_text if answer_text and fits_whole_text(provider.name, answer_text) else ""
     embedder = _StagedEmbedder(provider, cache, progress,
-                               statement_texts + [c.text for c in to_embed] + list(whole_pages.values()))
+                               statement_texts + [c.text for c in to_embed] + list(whole_pages.values())
+                               + ([whole_answer] if whole_answer else []))
 
     def embed_chunks(chunks: list[Chunk]) -> list[Chunk]:
         vectors = embedder.embed([c.text for c in chunks])
@@ -184,8 +192,9 @@ def analyze(prepared: Prepared, provider: EmbeddingProvider, cache, *, covered_d
     page_vectors = {key: v for key, v in zip(whole_pages, embedder.embed(list(whole_pages.values())))
                     if v is not None}
     pages = {(c.origin, c.url) for c in own + sources}
-    matched = match(prepared.answer, statement_vectors, own + sources,
-                    covered_delta=covered_delta, weak_delta=weak_delta, page_vectors=page_vectors)
+    answer_vector = embedder.embed([whole_answer])[0] if whole_answer else None
+    matched = match(prepared.answer, statement_vectors, own + sources, covered_delta=covered_delta,
+                    weak_delta=weak_delta, page_vectors=page_vectors, answer_vector=answer_vector)
     hits = topic_hits(prepared.answer, statement_vectors, prepared.page_texts, page_vectors,
                       lambda texts: embedder.embed(texts), prepared.answer.content_factor)
     matched = with_topic_hits(matched, hits)
@@ -206,9 +215,10 @@ def analyze(prepared: Prepared, provider: EmbeddingProvider, cache, *, covered_d
         source_target_words=prepared.source_target_words,
         whole_pages=len(pages & set(page_vectors)),
         mean_pages=len(pages - set(page_vectors)),
+        whole_answer=answer_vector is not None,
     )
     return Result(meta, matched, prepared.answer, own, sources, prepared.own_stats, prepared.source_stats,
-                  list(statement_vectors), page_vectors, hits)
+                  list(statement_vectors), page_vectors, hits, answer_vector)
 
 
 def _require_statement_vectors(vectors: Sequence[Optional[np.ndarray]]) -> None:
@@ -219,7 +229,8 @@ def _require_statement_vectors(vectors: Sequence[Optional[np.ndarray]]) -> None:
 def rematch(result: Result, *, covered_delta: float, weak_delta: float) -> Result:
     """New thresholds on an existing result; no embedding call."""
     matched = match(result.answer, result.statement_vectors, result.own_chunks + result.source_chunks,
-                    covered_delta=covered_delta, weak_delta=weak_delta, page_vectors=result.page_vectors)
+                    covered_delta=covered_delta, weak_delta=weak_delta, page_vectors=result.page_vectors,
+                    answer_vector=result.answer_vector)
     matched = with_topic_hits(matched, result.topic_hits)
     meta = dataclasses.replace(result.meta, covered_delta=covered_delta, weak_delta=weak_delta)
     return dataclasses.replace(result, meta=meta, match=matched)

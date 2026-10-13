@@ -27,9 +27,11 @@ class FakeProvider(EmbeddingProvider):
         super().__init__("fake-model")
         self.dim = dim
         self.calls = 0  # number of texts embedded
+        self.seen_texts: list[str] = []
 
     def _embed_batch(self, texts):
         self.calls += len(texts)
+        self.seen_texts.extend(texts)
         return [bow_vector(t, self.dim).tolist() for t in texts]
 
 

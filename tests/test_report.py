@@ -344,7 +344,7 @@ def test_explanation_sheet_covers_every_column_of_every_sheet():
 
     for result in (sample_result(), sample_result(with_sources=False)):
         legend = explanation_frame(result)
-        assert list(legend.columns) == ["Keyword/Prompt", "Blatt", "Spalte", "Bedeutung"]
+        assert list(legend.columns) == ["Keyword/Prompt", "Blatt", "Spalte", "Bedeutung", "So ermittelt"]
         explained = {(sheet, column) for sheet, column in zip(legend["Blatt"], legend["Spalte"])}
         frames = {"Seiten": pages_frame(result), "Themen": topics_frame(result), "Aussagen": statements_frame(result),
                   "Aussage x Seite": statement_pages_frame(result), "Chunks": chunks_frame(result),
@@ -354,6 +354,11 @@ def test_explanation_sheet_covers_every_column_of_every_sheet():
                 assert (sheet, column) in explained or (sheet, column) == (sheet, "Keyword/Prompt"), (sheet, column)
         assert ("alle", "Keyword/Prompt") in explained
         assert all(len(text) > 15 for text in legend["Bedeutung"])
+        measured = {("Seiten", "Seitenscore"), ("Themen", "Score"), ("Aussagen", "Delta"),
+                    ("Aussage x Seite", "Seiten-Relevanz")}
+        how = {(sheet, column): text for sheet, column, text in zip(legend["Blatt"], legend["Spalte"], legend["So ermittelt"])}
+        assert all(len(how[key]) > 20 for key in measured)
+        assert how[("Seiten", "URL")] == ""  # not a measured value
 
 
 def test_topics_frame_names_the_window_size():

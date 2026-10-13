@@ -119,7 +119,7 @@ def test_chunking_step_shows_protocol_ai_chunks_and_embedding_count(backend):
     assert "Quellen: 1 Seite → 1 Chunk" in protocol  # target 18: the two short source paragraphs merge
     frame = at.dataframe[0].value
     assert list(frame.columns) == ["Thema", "Aussage", "Wortzahl"] and len(frame) == 5
-    assert any("bis zu 11 Texte" in c.value for c in at.caption)
+    assert any("bis zu 12 Texte" in c.value for c in at.caption)
     assert backend.calls == 0 and backend.fetched == []
     assert button(at, ANALYZE_BUTTON).disabled is False
 
@@ -235,7 +235,7 @@ def test_chunk_export_can_be_uploaded_instead_of_content(backend):
     button(at, ANALYZE_BUTTON).click()
     at.run()
     assert not at.exception and not at.error
-    assert backend.calls == 5  # only the five statements
+    assert backend.calls == 6  # the five statements and the whole answer
     assert len(at.get("download_button")) == 1  # no second chunk export for uploaded chunks
 
 

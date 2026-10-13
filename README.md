@@ -140,7 +140,7 @@ Mit OpenAI oder Gemini gehen die Texte der AI-Antwort, deines Contents und der Q
 | Aussagen | Bester Chunk deiner Domain pro Aussage, mit Abstand zur besten Quelle, der Nähe zum Quell-Chunk (Cosinus der beiden besten Chunks, nur mit Quell-URLs) und Status |
 | Aussage × Seite | Jede Aussage gegen jede Seite: bester Chunk der Seite und Relevanz der Seite als Ganzes |
 
-Der Seitenvektor für „Seiten" und für die Seiten-Relevanz ist das Embedding des kompletten Seitentexts, solange der Text in das Modell passt (OpenAI und bge-m3 etwa 4.000 bis 5.000 Wörter, Gemini etwa 1.200). Längere Seiten und Seiten aus einem Chunk-Embedding-Export bekommen stattdessen den wortgewichteten Durchschnitt ihrer Chunk-Vektoren. Schritt 4 warnt vor der Analyse, welche Seiten über der Grenze liegen, und der Tab „Seiten“ zeigt in der Spalte „Seitenvektor“ pro Seite, ob sie komplett eingebettet wurde.
+Der Seitenvektor für „Seiten" und für die Seiten-Relevanz ist das Embedding des kompletten Seitentexts, solange der Text in das Modell passt (OpenAI und bge-m3 etwa 4.000 bis 5.000 Wörter, Gemini etwa 1.200). Längere Seiten und Seiten aus einem Chunk-Embedding-Export bekommen stattdessen den wortgewichteten Durchschnitt ihrer Chunk-Vektoren. Schritt 4 warnt vor der Analyse, welche Seiten über der Grenze liegen, und der Tab „Seiten“ zeigt in der Spalte „Seitenvektor“ pro Seite, ob sie komplett eingebettet wurde. Die AI-Antwort wird für den Seitenscore ebenfalls als ein Text eingebettet, so stehen sich zwei Ganztext-Vektoren gegenüber.
 
 Im Tab „Aussage × Seite" stehen pro Aussage und Seite zwei Werte:
 
@@ -151,7 +151,7 @@ Hoher Chunk Score bei niedriger Seiten-Relevanz heißt: Die passende Passage ste
 
 Status mit Quellen: **abgedeckt** (dein Chunk liegt höchstens 0,05 unter dem besten Quell-Chunk), **schwach** (bis 0,15 darunter), **Lücke** (mehr als 0,15 darunter). Beide Schwellen sind in der Seitenleiste einstellbar.
 
-Das Excel enthält zusätzlich alle Chunks, ein Protokoll und ein Blatt „Erklärung“, das jede Spalte jedes Blatts beschreibt; ebenso das Excel des Gap-Modus. Das Protokoll umfasst Datum, Modell, Chunk-Größe und nicht geladene URLs. In jedem Blatt steht das Keyword in der ersten Spalte.
+Das Excel enthält zusätzlich alle Chunks, ein Protokoll und ein Blatt „Erklärung“, das jede Spalte jedes Blatts in einfachen Worten beschreibt und bei jedem gemessenen Wert in der Spalte „So ermittelt“ sagt, wie er berechnet wurde; ebenso das Excel des Gap-Modus. Das Protokoll umfasst Datum, Modell, Chunk-Größe und nicht geladene URLs. In jedem Blatt steht das Keyword in der ersten Spalte.
 
 ## Domain einmal einbetten, für viele Keywords nutzen
 

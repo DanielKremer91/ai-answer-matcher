@@ -72,14 +72,18 @@ def _words(chunks: Sequence[Chunk], indices: Sequence[int]) -> np.ndarray:
 
 def match(answer: SegmentedAnswer, statement_vectors: Sequence[np.ndarray], chunks: Sequence[Chunk], *,
           covered_delta: float = 0.05, weak_delta: float = 0.15,
-          page_vectors: Optional[dict] = None) -> MatchResult:
+          page_vectors: Optional[dict] = None, answer_vector: Optional[np.ndarray] = None) -> MatchResult:
     """`page_vectors` maps (origin, url) to the embedding of the whole page; pages without one use the
-    word-weighted average of their chunk vectors."""
+    word-weighted average of their chunk vectors. `answer_vector` is the embedding of the whole answer
+    text; without it the word-weighted average of the statement vectors stands in."""
     page_vectors = page_vectors or {}
     statements = answer.statements
     s_matrix = unit_rows(np.vstack(statement_vectors).astype(np.float32))
     s_weights = np.array([s.words for s in statements], dtype=np.float32)
-    answer_vector = weighted_mean(s_matrix, s_weights)
+    if answer_vector is None:
+        answer_vector = weighted_mean(s_matrix, s_weights)
+    else:
+        answer_vector = unit_rows(np.asarray(answer_vector, dtype=np.float32)[None, :])[0]
 
     own = [c for c in chunks if c.origin == OWN and c.vector is not None]
     sources = [c for c in chunks if c.origin == SOURCE and c.vector is not None]

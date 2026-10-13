@@ -232,6 +232,8 @@ def protocol_frame(result: Result) -> pd.DataFrame:
         ("Schwelle schwach", round(meta.weak_delta, 4)),
         ("Seitenvektoren", f"{_count(meta.whole_pages, 'Seite', 'Seiten')} komplett eingebettet, "
                            f"{meta.mean_pages} als Durchschnitt ihrer Chunks"),
+        ("Antwortvektor", "AI-Antwort komplett eingebettet" if meta.whole_answer
+                          else "Durchschnitt der Aussagen-Vektoren"),
     ]
     rows += [("Chunking", line) for line in protocol_lines(
         result.answer, result.own_stats, result.source_stats, meta.failed, prechunked=meta.prechunked,
@@ -326,11 +328,46 @@ COLUMN_EXPLANATIONS = {
     ("Protokoll", "Wert"): "Datum, Anbieter, Modell, Dimension, Zielgröße, Schwellen, Chunk-Statistik, nicht geladene URLs und Hinweise dieses Laufs.",
 }
 
+# How each measured value is computed. "Embedding" = the number vector the model makes from a text;
+# "Kosinus" = the similarity of two such vectors, 1 = identical direction. Columns that are not
+# measured (names, texts, counts of rows) have no entry and get an empty cell in the legend.
+_COSINE = "Kosinus-Ähnlichkeit der beiden Embeddings"
+COLUMN_CALCULATIONS = {
+    ("Seiten", "Rang"): "Alle Seiten nach Seitenscore absteigend sortiert, Platz 1 = höchster Wert.",
+    ("Seiten", "Seitenscore"): "Embedding der ganzen AI-Antwort (als ein Text) gegen das Embedding der ganzen Seite (Spalte Seitenvektor sagt, wie der entstand). " + _COSINE + ".",
+    ("Seiten", "Bester Chunk Score"): "Jede Aussage der AI-Antwort einzeln eingebettet, jeder Chunk der Seite einzeln eingebettet. Kosinus für jedes Paar Aussage × Chunk, der höchste Wert zählt.",
+    ("Seiten", "Aussagen abgedeckt"): "Pro Aussage: bester Chunk dieser Seite minus bester Chunk aller Quellen. Liegt die Differenz über −Schwelle „abgedeckt“, zählt die Aussage.",
+    ("Seiten", "Aussagen mit bestem Chunk"): "Pro Aussage wird der Chunk mit dem höchsten Kosinus über alle eigenen Seiten gesucht; gezählt wird, wie oft er auf dieser Seite liegt.",
+    ("Seiten", "Seitenvektor"): "Passt der Seitentext in die Grenze des Anbieters, wird er als ein Text eingebettet. Sonst: Mittelwert der Chunk-Embeddings, jeder Chunk mit seiner Wortzahl gewichtet, dann auf Länge 1 normiert.",
+    ("Themen", "Score"): "Themenvektor = Mittelwert der Embeddings aller Aussagen des Themas, mit Wortzahl gewichtet. Deine Seiten werden in Fenster von Themenlänge × Chunk-Faktor geschnitten (Satzgrenzen, ein Satz Überlappung), jedes Fenster eingebettet. Höchster Kosinus zwischen Themenvektor und einem Fenster.",
+    ("Themen", "Score Quelle"): "Wie Score, mit den Fenstern der Quellen.",
+    ("Themen", "Delta"): "Score minus Score Quelle.",
+    ("Themen", "Vergleich"): "Fenstergröße = Wortzahl des Themas × Chunk-Faktor, begrenzt auf 15 bis 300 Wörter. Fenster werden über die zehn eigenen Seiten mit dem höchsten Seitenvektor-Kosinus zum Thema und über alle Quellen gelegt.",
+    ("Themen", "abgedeckt"): "Anzahl Aussagen des Themas mit diesem Status (Blatt Aussagen, Spalte Status).",
+    ("Themen", "schwach"): "Anzahl Aussagen des Themas mit diesem Status.",
+    ("Themen", "Lücke"): "Anzahl Aussagen des Themas mit diesem Status.",
+    ("Themen", "stark"): "Anzahl Aussagen des Themas mit diesem Status.",
+    ("Themen", "über Durchschnitt"): "Anzahl Aussagen des Themas mit diesem Status.",
+    ("Themen", "unter Durchschnitt"): "Anzahl Aussagen des Themas mit diesem Status.",
+    ("Aussagen", "Wortzahl"): "Wörter der Aussage, getrennt an Leerzeichen.",
+    ("Aussagen", "Score"): "Embedding der Aussage gegen das Embedding jedes eigenen Chunks, " + _COSINE + "; der höchste Wert zählt.",
+    ("Aussagen", "Score Quelle"): "Wie Score, mit den Chunks aller Quellen.",
+    ("Aussagen", "Delta"): "Score minus Score Quelle.",
+    ("Aussagen", "Nähe zum Quell-Chunk"): "Embedding deines besten Chunks gegen das Embedding des besten Quell-Chunks, " + _COSINE + ".",
+    ("Aussagen", "Status"): "Mit Quellen aus dem Delta und den beiden Schwellen in der Seitenleiste. Ohne Quellen: Alle Score-Werte sortiert und in Viertel geteilt; oberstes Viertel „stark“, unterstes „schwach“.",
+    ("Aussage x Seite", "Rang"): "Pro Aussage alle Seiten nach Bester Chunk Score absteigend sortiert.",
+    ("Aussage x Seite", "Bester Chunk Score"): "Embedding der Aussage gegen jeden Chunk dieser Seite, " + _COSINE + "; der höchste Wert.",
+    ("Aussage x Seite", "Seiten-Relevanz"): "Embedding der Aussage gegen den Seitenvektor dieser Seite (ganze Seite), " + _COSINE + ".",
+    ("Chunks", "Chunk-Index"): "Zählt ab 0 je Seite in der Reihenfolge, in der die Chunks im Text stehen.",
+    ("Chunks", "Wortzahl"): "Wörter des Chunks, getrennt an Leerzeichen.",
+}
+
 
 def explanation_frame(result: Result) -> pd.DataFrame:
-    """One row per column of the other sheets: which sheet, which column, what it means."""
-    rows = [(sheet, column, meaning) for (sheet, column), meaning in COLUMN_EXPLANATIONS.items()]
-    return _frame(rows, ["Blatt", "Spalte", "Bedeutung"], result.meta.keyword)
+    """One row per column of the other sheets: sheet, column, what it means, how a measured value is computed."""
+    rows = [(sheet, column, meaning, COLUMN_CALCULATIONS.get((sheet, column), ""))
+            for (sheet, column), meaning in COLUMN_EXPLANATIONS.items()]
+    return _frame(rows, ["Blatt", "Spalte", "Bedeutung", "So ermittelt"], result.meta.keyword)
 
 
 def to_excel(result: Result) -> bytes:

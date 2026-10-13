@@ -110,9 +110,22 @@ GAP_COLUMN_EXPLANATIONS = {
 }
 
 
+_COSINE = "Kosinus-Ähnlichkeit der beiden Embeddings"
+GAP_COLUMN_CALCULATIONS = {
+    ("Abschnitte", "Rang"): "Alle Abschnitte einer Wettbewerber-Seite nach Kosinus absteigend sortiert.",
+    ("Abschnitte", "Wörter"): "Wörter des Abschnitts (Überschrift und Text), getrennt an Leerzeichen.",
+    ("Abschnitte", "Wörter eigen"): "Wörter des eigenen Abschnitts, getrennt an Leerzeichen.",
+    ("Abschnitte", "Kosinus"): "Jeder Abschnitt (Überschrift plus Text) wird als ein Text eingebettet. Wettbewerber-Abschnitt gegen jeden eigenen Abschnitt, " + _COSINE + "; der höchste Wert zählt. Bei ungleich langen Paaren (Spalte Vergleich) zusätzlich das beste Fenster, der höhere der beiden Werte gewinnt.",
+    ("Abschnitte", "Vergleich"): "Ist ein Abschnitt mehr als viermal so lang wie sein Gegenpart, wird der längere an Satzgrenzen in Fenster von der Länge des kürzeren geschnitten (ein Satz Überlappung), jedes Fenster eingebettet. Bis 40 eigene Abschnitte für alle solchen Paare, darüber für die fünf besten Ganztext-Paare und die fünf längsten.",
+    ("Abschnitte", "Kosinus AI-Aussage"): "Jede Aussage der AI-Antwort eingebettet. Wettbewerber-Abschnitt gegen jede Aussage, " + _COSINE + "; der höchste Wert. Ist der Abschnitt mehr als viermal so lang wie die Chunk-Zielgröße (Median der Aussagenlänge × Chunk-Faktor, 15 bis 80 Wörter), zusätzlich Fenster dieser Größe; der höhere Wert aus Ganztext und bestem Fenster gewinnt.",
+    ("Abschnitte", "Priorität"): "Kosinus AI-Aussage minus Kosinus, auf vier Stellen gerundet.",
+}
+
+
 def gap_explanation_frame(result: GapResult) -> pd.DataFrame:
-    rows = [(sheet, column, meaning) for (sheet, column), meaning in GAP_COLUMN_EXPLANATIONS.items()]
-    return _frame(rows, ["Blatt", "Spalte", "Bedeutung"], result.keyword)
+    rows = [(sheet, column, meaning, GAP_COLUMN_CALCULATIONS.get((sheet, column), ""))
+            for (sheet, column), meaning in GAP_COLUMN_EXPLANATIONS.items()]
+    return _frame(rows, ["Blatt", "Spalte", "Bedeutung", "So ermittelt"], result.keyword)
 
 
 def gap_to_excel(result: GapResult) -> bytes:

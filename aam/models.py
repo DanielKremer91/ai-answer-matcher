@@ -162,6 +162,7 @@ class RunMeta:
     source_target_words: int = 0  # chunk size used for the sources; 0 = same as target_words
     whole_pages: int = 0  # pages whose vector is the embedding of the whole text
     mean_pages: int = 0  # pages whose vector is the average of their chunk vectors
+    whole_answer: bool = False  # the answer vector is the embedding of the whole answer text
 
 
 @dataclass(frozen=True)
@@ -176,3 +177,4 @@ class Result:
     statement_vectors: list  # kept so thresholds can change without re-embedding
     page_vectors: dict = field(default_factory=dict)  # (origin, url) -> whole-text vector where available
     topic_hits: dict = field(default_factory=dict)  # topic id -> (own Hit, source Hit|None, window_words); kept for rematch
+    answer_vector: object = None  # embedding of the whole answer text; None -> mean of the statement vectors

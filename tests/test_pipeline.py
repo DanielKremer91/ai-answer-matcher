@@ -26,7 +26,7 @@ def test_prepare_segments_and_chunks_with_the_derived_target():
     assert (prepared.own_stats.documents, prepared.own_stats.chunks, prepared.own_stats.merged) == (2, 3, 2)
     assert prepared.source_stats.chunks == 2
     assert prepared.prechunked is False and prepared.warnings == () and prepared.failed == ()
-    assert prepared.texts_to_embed == 10  # 5 statements + 2 chunks with other text + 3 whole pages; 3 chunks repeat a statement
+    assert prepared.texts_to_embed == 11  # 5 statements + 2 chunks with other text + 3 whole pages + whole answer; 3 chunks repeat a statement
 
 
 def test_target_override_changes_the_chunking():
@@ -72,12 +72,12 @@ def test_second_analysis_reuses_cached_embeddings():
     prepared = prepare(KEYWORD, ANSWER, own_docs=OWN_DOCS, source_docs=SOURCE_DOCS)
     seen = []
     analyze(prepared, provider, cache, progress=lambda done, total: seen.append((done, total)))
-    assert provider.calls == 12 and seen[-1] == (12, 12)  # + topic windows of the two topics with content
+    assert provider.calls == 13 and seen[-1] == (13, 13)  # + topic windows of the two topics with content, + whole answer
     analyze(prepared, provider, cache, weak_delta=0.3)
-    assert provider.calls == 12
+    assert provider.calls == 13
     fresh = prepare(KEYWORD, ANSWER, own_docs=OWN_DOCS, source_docs=SOURCE_DOCS)
     analyze(fresh, provider, cache)
-    assert provider.calls == 12
+    assert provider.calls == 13
 
 
 def test_rematch_applies_new_thresholds_without_embedding():
@@ -102,7 +102,7 @@ def test_reusing_exported_chunks_gives_the_same_results_and_embeds_less():
     assert (prepared.own_stats.documents, prepared.own_stats.chunks) == (2, 3)
     provider = FakeProvider()
     second = analyze(prepared, provider, None)
-    assert provider.calls == 6  # the statements and the whole source page; the source chunks repeat two statements
+    assert provider.calls == 7  # the statements, the whole answer and the whole source page; the source chunks repeat two statements
     assert second.meta.prechunked is True
     for a, b in zip(first.match.statements, second.match.statements):
         assert (a.own.url, a.status) == (b.own.url, b.status)
@@ -219,7 +219,7 @@ def test_analyze_does_not_change_prepared():
     before = prepared.texts_to_embed
     result = analyze(prepared, FakeProvider(), None)
     assert all(c.vector is None for c in all_chunks(prepared))
-    assert prepared.texts_to_embed == before == 10
+    assert prepared.texts_to_embed == before == 11
     assert all(c.vector is not None for c in result.own_chunks + result.source_chunks)
 
 
@@ -263,8 +263,8 @@ def test_prechunked_run_reports_one_continuous_progress():
         *SOURCE_DOCS])
     provider, seen = FakeProvider(), []
     analyze(prepared, provider, None, progress=lambda done, total: seen.append((done, total)))
-    assert provider.calls == 7  # 5 statements, the whole foerderung page; the extra page equals its one chunk
-    assert seen[-1] == (7, 7) and {total for _, total in seen} == {7}
+    assert provider.calls == 8  # 5 statements, the whole answer, the whole foerderung page; the extra page equals its one chunk
+    assert seen[-1] == (8, 8) and {total for _, total in seen} == {8}
     done = [d for d, _ in seen]
     assert done == sorted(done)
 
@@ -338,7 +338,7 @@ def test_pages_are_embedded_whole_when_they_fit_the_model():
     assert OWN_DOCS[0].text in provider.texts and SOURCE_DOCS[0].text in provider.texts
     assert set(result.page_vectors) == set(prepared.page_texts)
     assert (result.meta.whole_pages, result.meta.mean_pages) == (3, 0)
-    assert prepared.texts_to_embed == 7 + 3
+    assert prepared.texts_to_embed == 7 + 3 + 1  # + the whole answer
 
 
 def test_overlong_pages_fall_back_to_the_chunk_average():
@@ -400,3 +400,18 @@ def test_reused_chunk_export_falls_back_to_chunk_level_topics():
     prepared = prechunked(sample_result(), source_docs=[])
     result = analyze(prepared, FakeProvider(), None)
     assert all(t.method == "Chunks" and t.window_words == 0 for t in result.match.topics)
+
+
+def test_page_score_uses_the_embedding_of_the_whole_answer():
+    """The page score is whole answer against whole page: the answer is embedded as one text, not averaged."""
+    provider = FakeProvider()
+    prepared = prepare("dachsanierung kosten", ANSWER, own_docs=OWN_DOCS, source_docs=SOURCE_DOCS)
+    result = analyze(prepared, provider, MemoryCache())
+    assert result.meta.whole_answer is True
+    assert result.answer_vector is not None
+    assert ANSWER.strip() in provider.seen_texts
+    # A too-long answer falls back to the mean of the statements.
+    long_answer = ANSWER + "\n" + " ".join(f"Fuellwort{i} Ende." for i in range(6000))
+    prepared_long = prepare("dachsanierung kosten", long_answer, own_docs=OWN_DOCS, source_docs=SOURCE_DOCS)
+    result_long = analyze(prepared_long, FakeProvider(), MemoryCache())
+    assert result_long.meta.whole_answer is False and result_long.answer_vector is None
