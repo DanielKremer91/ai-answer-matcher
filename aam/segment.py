@@ -43,7 +43,15 @@ _MD_HEADING = re.compile(r"^\s*#{1,6}\s+")
 _WHOLE_BOLD = re.compile(r"^\s*(\*\*|__)(.+?)\1\s*:?\s*$")
 _LEAD_IN = re.compile(r"^(?P<label>[^:.!?]{1,80}):\s+(?P<rest>\S.*)$")
 _LABEL_ONLY = re.compile(r"^(?P<label>[^:.!?]{1,80}):$")  # "Trockenlegung & Abdichtung:" before sub-items
-_SENTENCE_END = re.compile(r"[.!?:]$")
+_SENTENCE_END = re.compile(r"[.!:]$")  # a short question line ("Welche Leitungen werden durchgeführt?") is a heading
+# Copied from Google's AI Mode / AI Overview, the text carries source chips: a name line ("SH-Netz-Shop",
+# "syna.de", "YouTube" + "·Andreas Zink"), often followed by a "+3" line for further sources.
+_PLUS_LINE = re.compile(r"^\s*\+\d+\s*$")
+_AUTHOR_LINE = re.compile(r"^\s*·")
+_DOMAIN_LINE = re.compile(r"^\s*[\w-]+(?:\.[\w-]+)*\.(?:de|com|org|net|at|ch|eu|info|io|tv|co|uk|fr|it|es|nl|dev|app)\s*$",
+                          re.IGNORECASE)
+_LEADING_SYMBOLS = re.compile("^[\\s\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D]+")
+_MAX_CHIP_WORDS = 6
 
 
 @dataclass
@@ -61,6 +69,32 @@ class _Draft:
     forced: bool = False
     heading: bool = False  # opened by a heading line; lead-ins inside it are statements, not topics
     prefix: str = ""  # label of a "Label:" line, carried into the statements that follow it
+
+
+def clean_pasted(text: str) -> tuple[str, list[str]]:
+    """Drop source chips from an answer copied out of Google's AI Mode / AI Overview and strip leading
+    emoji from heading lines. Returns the cleaned text and the dropped lines."""
+    raw = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    chips: set[str] = set()
+    for i, line in enumerate(raw):
+        if not _PLUS_LINE.match(line):
+            continue
+        j = i - 1
+        while j >= 0 and (not raw[j].strip() or _AUTHOR_LINE.match(raw[j])):
+            j -= 1
+        if j >= 0:
+            name = raw[j].strip()
+            if 0 < count_words(name) <= _MAX_CHIP_WORDS and not _SENTENCE_END.search(name):
+                chips.add(name)
+    kept, dropped = [], []
+    for line in raw:
+        stripped = line.strip()
+        if stripped and (_PLUS_LINE.match(line) or _AUTHOR_LINE.match(line) or _DOMAIN_LINE.match(line)
+                         or stripped in chips):
+            dropped.append(stripped)
+            continue
+        kept.append(_LEADING_SYMBOLS.sub("", line) if stripped else line)
+    return "\n".join(kept), dropped
 
 
 def _parse_lines(text: str) -> list[_Line]:
@@ -238,6 +272,7 @@ def derive_target(word_counts: list[int], content_factor: float = 1.0) -> tuple[
 
 def segment_answer(keyword: str, text: str, *, target_override: Optional[int] = None,
                    embed: Optional[Embed] = None, content_factor: float = 1.0) -> SegmentedAnswer:
+    text, removed = clean_pasted(text)
     drafts = [_Draft(d.label, _split_long(d.texts)) for d in _structure_topics(_parse_lines(text))]
     if not drafts:
         raise ValueError("Die AI-Antwort enthält keine erkennbare Aussage.")
@@ -258,4 +293,4 @@ def segment_answer(keyword: str, text: str, *, target_override: Optional[int] = 
         topics.append(Topic(topic_id, draft.label, tuple(statements)))
     derived, median = derive_target([s.words for t in topics for s in t.statements], content_factor)
     target = int(target_override) if target_override else derived
-    return SegmentedAnswer(keyword.strip(), tuple(topics), target, median, method, content_factor)
+    return SegmentedAnswer(keyword.strip(), tuple(topics), target, median, method, content_factor, tuple(removed))

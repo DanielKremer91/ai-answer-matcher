@@ -206,6 +206,12 @@ def protocol_lines(answer: SegmentedAnswer, own_stats: ChunkStats, source_stats:
         f"(Segmentierung: {METHOD_LABELS[answer.method]})",
         _prechunked_line(own_stats) if prechunked else _stats_line("Eigener Content", own_stats),
     ]
+    if answer.removed_lines:
+        shown = ", ".join(dict.fromkeys(answer.removed_lines))
+        if len(shown) > 120:
+            shown = shown[:117].rsplit(",", 1)[0] + ", …"
+        lines.insert(1, f"Quellen-Hinweise aus der kopierten Antwort entfernt: "
+                        f"{_count(len(answer.removed_lines), 'Zeile', 'Zeilen')} ({shown})")
     if source_stats is None:
         lines.append("Quellen: keine. Der Status zeigt die relative Stärke innerhalb des eigenen Contents.")
     else:

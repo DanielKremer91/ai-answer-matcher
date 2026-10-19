@@ -48,6 +48,7 @@ class SegmentedAnswer:
     median_words: float  # median statement length the target was derived from
     method: str  # "structure" or "semantic"
     content_factor: float = 1.0  # content chunk size relative to the statement median
+    removed_lines: tuple = ()  # source chips and similar lines dropped from a pasted answer
 
     @property
     def statements(self) -> list[Statement]:

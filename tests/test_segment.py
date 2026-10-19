@@ -287,3 +287,64 @@ def test_segment_answer_splits_bullets_inside_a_topic_and_keeps_the_label():
     [topic] = answer.topics
     assert [s.text[:30] for s in topic.statements] == ["Die Fahrt: Transportieren Sie ", "Die Fahrt: Bringen Sie vom Züc",
                                                         "Erste Nacht: Lassen Sie den We"]
+
+
+AI_MODE = """Eine Mehrspartenhauseinführung (MSH) ist das moderne Standardsystem, um alle wichtigen Versorgungsleitungen gebündelt in ein Gebäude zu führen. 
+SH-Netz-Shop
+ +3
+🛠️ Welche Leitungen werden durchgeführt?
+Typischerweise bündelt das System die vier klassischen Versorgungssparten: 
+Bayernwerk
+ +1
+Strom (Starkstrom-/Einspeisekabel)
+Wasser (Trinkwasserzuleitung)
+Telekommunikation (Telefon, DSL, Glasfaser/Breitband)
+Gas oder alternativ Fernwärme 
+Hauff-Technik
+ +5
+🏡 Die zwei Einbauarten
+Welches Modell benötigt wird, hängt entscheidend von der Bauweise des Hauses ab: 
+SH-Netz-Shop
+Mit Keller (Wanddurchführung): Das System wird über ein Futterrohr in die Kellerwand eingesetzt. 
+syna.de
+ +1
+Ohne Keller (Bodenplattendurchführung): Die Mehrsparte wird vor dem Gießen der Betonplatte einbetoniert. 
+YouTube
+·Andreas Zink
+ +3
+✨ Die wichtigsten Vorteile
+100 % dicht: Die zertifizierten Systeme garantieren absolute Gas-, Druckwasser- und Radondichtigkeit. 
+syna.de
+Kosteneffizient: Es wird nur noch ein einziger Erdigraben von der Straße zum Haus benötigt. 
+Hauff-Technik
+ +1
+⚠️ Wichtige Planungstipps für Bauherren
+Die Anschaffung der Hauseinführung liegt in der Verantwortung des Bauherrn. 
+Bayernwerk
+Netzbetreiber fragen: Die lokalen Versorgungsunternehmen schreiben oft genau vor, welches Fabrikat zugelassen ist. 
+SH-Netz-Shop
+ +3
+"""
+
+
+def test_ai_mode_copy_with_source_chips_and_emoji_headings():
+    answer = segment_answer("mehrspartenhauseinführung", AI_MODE)
+    assert [t.label for t in answer.topics] == [
+        "Einleitung", "Welche Leitungen werden durchgeführt?", "Die zwei Einbauarten", "Die wichtigsten Vorteile",
+        "Wichtige Planungstipps für Bauherren"]
+    assert [len(t.statements) for t in answer.topics] == [1, 5, 3, 2, 2]
+    texts = [s.text for s in answer.statements]
+    for chip in ("SH-Netz-Shop", "Bayernwerk", "Hauff-Technik", "syna.de", "YouTube", "Andreas Zink", "+3"):
+        assert not any(chip in t for t in texts), chip
+    assert "Strom (Starkstrom-/Einspeisekabel)" in texts
+    assert set(answer.removed_lines) == {"SH-Netz-Shop", "+3", "Bayernwerk", "+1", "Hauff-Technik", "+5", "syna.de",
+                                         "YouTube", "·Andreas Zink"}
+    assert len(answer.removed_lines) == 18
+
+
+def test_clean_pasted_keeps_ordinary_short_lines_that_are_no_chips():
+    from aam.segment import clean_pasted
+
+    text = "Kostenübersicht\nEine Sanierung kostet 100 Euro.\nFörderung\nDie KfW zahlt Zuschüsse."
+    cleaned, dropped = clean_pasted(text)
+    assert cleaned == text and dropped == []
