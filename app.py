@@ -38,7 +38,21 @@ GAP_CHUNKS_ERROR = ("Ein Chunk-Embedding-Export enthält keine Überschriften. L
 SOURCE_CHUNKS_ERROR = ("Ein Chunk-Embedding-Export gilt nur für den eigenen Content. Lade hier den Frog-Export "
                        "mit dem Main Content der Quellen hoch.")
 
-st.set_page_config(page_title="AI Answer Matcher", layout="wide")
+st.set_page_config(page_title="ONE AI Answer Matcher", page_icon="🎯", layout="wide")
+st.markdown(
+    """
+<div style="display: flex; align-items: center; gap: 20px; margin-bottom: 0.5rem;">
+  <img src="https://onebeyondsearch.com/img/ONE_beyond_search%C3%94%C3%87%C3%B4gradient%20%282%29.png" alt="ONE Beyond Search" style="height: 60px;">
+</div>
+<style>
+div[data-testid="stDownloadButton"] > button {
+    background-color: #d7263d !important; color: white !important; border: 1px solid #b51f33 !important;
+}
+div[data-testid="stDownloadButton"] > button:hover { background-color: #b51f33 !important; color: white !important; }
+</style>
+""",
+    unsafe_allow_html=True,
+)
 try:
     load_env_file(Path(__file__).resolve().parent / ".env")
 except (OSError, UnicodeDecodeError):
@@ -80,6 +94,16 @@ def remember_inputs() -> None:
 st.title("AI Answer Matcher")
 st.caption("Wie nah ist dein Content an der Antwort von AI Overviews oder AI Mode? "
            "Vergleich per Embeddings und Kosinus-Ähnlichkeit, auf Seiten- und auf Passagen-Ebene.")
+st.markdown(
+    """
+<div style="background-color: #f2f2f2; color: #000000; padding: 15px 20px; border-radius: 6px; font-size: 0.9em; max-width: 850px; margin-bottom: 1.5em; line-height: 1.5;">
+  Entwickelt von <a href="https://www.linkedin.com/in/daniel-kremer-b38176264/" target="_blank">Daniel Kremer</a> von <a href="https://onebeyondsearch.com/" target="_blank">ONE Beyond Search</a> &nbsp;|&nbsp;
+  Vorgestellt auf der SEOKomm 2026 &nbsp;|&nbsp;
+  Folge mir auf <a href="https://www.linkedin.com/in/daniel-kremer-b38176264/" target="_blank">LinkedIn</a> für mehr SEO-Insights und Tool-Updates
+</div>
+""",
+    unsafe_allow_html=True,
+)
 MODE_INFO = {
     MODE_STAGE1: "**AI-Antwort gegen Content:** Du fügst eine AI-Antwort ein, dazu deinen Content (Frog-Export, "
                  "URLs oder Text) und optional die zitierten Quellen. Ergebnis: Welche Seite passt insgesamt "

@@ -1049,3 +1049,11 @@ def test_gap_mode_shows_the_chunk_factor_slider():
     at.radio(key="mode").set_value("Content-Gap zwischen Seiten").run()
     assert not at.exception
     assert any(s.key == "content_factor" for s in at.sidebar.slider)
+
+
+def test_header_shows_the_one_logo_and_the_author_box():
+    at = AppTest.from_file(APP, default_timeout=30).run()
+    assert not at.exception
+    html = [m.value for m in at.markdown]
+    assert any('alt="ONE Beyond Search"' in h and "onebeyondsearch.com/img/" in h for h in html)
+    assert any("Entwickelt von" in h and "SEOKomm 2026" in h for h in html)
