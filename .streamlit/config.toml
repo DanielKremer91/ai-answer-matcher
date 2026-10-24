@@ -1,5 +1,4 @@
 [server]
-address = "localhost"
 maxUploadSize = 1000
 
 [browser]

@@ -28,7 +28,7 @@ Mit uv (empfohlen, holt Python 3.11 selbst):
 ```bash
 uv venv --python 3.11 .venv
 uv pip install --python .venv/bin/python -r requirements.txt
-.venv/bin/streamlit run app.py
+.venv/bin/streamlit run app.py --server.address localhost
 ```
 
 Unter Windows (PowerShell):
@@ -36,7 +36,7 @@ Unter Windows (PowerShell):
 ```powershell
 uv venv --python 3.11 .venv
 uv pip install --python .venv\Scripts\python.exe -r requirements.txt
-.venv\Scripts\streamlit run app.py
+.venv\Scripts\streamlit run app.py --server.address localhost
 ```
 
 Mit vorhandenem Python 3.11:
@@ -44,7 +44,7 @@ Mit vorhandenem Python 3.11:
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-streamlit run app.py
+streamlit run app.py --server.address localhost
 ```
 
 Unter Windows:
@@ -53,10 +53,14 @@ Unter Windows:
 py -3.11 -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-.venv\Scripts\streamlit run app.py
+.venv\Scripts\streamlit run app.py --server.address localhost
 ```
 
-Die App ist nur vom eigenen Rechner aus erreichbar (`localhost`, siehe `.streamlit/config.toml`), nicht aus dem Netzwerk.
+Mit `--server.address localhost` ist die App nur vom eigenen Rechner aus erreichbar, nicht aus dem Netzwerk. Ohne den Schalter lauscht Streamlit auf allen Netzwerkschnittstellen.
+
+### Auf Streamlit Community Cloud betreiben
+
+Das Repo lässt sich ohne Änderung unter [share.streamlit.io](https://share.streamlit.io) veröffentlichen: neue App, dieses Repository, Branch `main`, Hauptdatei `app.py`. Jeder Nutzer trägt seinen eigenen API-Key in der Seitenleiste ein, der Key wird nicht gespeichert. Grenzen der Cloud-Variante: Ollama steht dort nicht zur Verfügung, es bleiben OpenAI und Gemini; der Arbeitsspeicher ist auf etwa 1 GB begrenzt, sehr große Frog-Exporte (tausende Seiten) gehören auf den eigenen Rechner. Für Live-Demos mit einer Handvoll URLs reicht die Cloud-Variante.
 
 Den API-Key trägst du in der Seitenleiste ein. Alternativ legst du neben `app.py` eine Datei `.env` an:
 
