@@ -348,3 +348,16 @@ def test_clean_pasted_keeps_ordinary_short_lines_that_are_no_chips():
     text = "Kostenübersicht\nEine Sanierung kostet 100 Euro.\nFörderung\nDie KfW zahlt Zuschüsse."
     cleaned, dropped = clean_pasted(text)
     assert cleaned == text and dropped == []
+
+
+def test_video_blocks_copied_with_the_answer_are_dropped():
+    from aam.segment import clean_pasted
+
+    text = ("Die Mehrsparte wird vor dem Gießen der Betonplatte einbetoniert.\nYouTube\n·Andreas Zink\n"
+            "Mehrsparten-Hauseinführung richtig setzen\n12:34\n1,2 Mio. Aufrufe\nvor 2 Jahren\nWeitere Videos\n"
+            "Biegesteife Mantelrohre führen die Leitungen nach draußen.")
+    cleaned, dropped = clean_pasted(text)
+    assert cleaned.split("\n") == ["Die Mehrsparte wird vor dem Gießen der Betonplatte einbetoniert.",
+                                   "Mehrsparten-Hauseinführung richtig setzen",
+                                   "Biegesteife Mantelrohre führen die Leitungen nach draußen."]
+    assert dropped == ["YouTube", "·Andreas Zink", "12:34", "1,2 Mio. Aufrufe", "vor 2 Jahren", "Weitere Videos"]

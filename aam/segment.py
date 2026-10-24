@@ -52,6 +52,12 @@ _DOMAIN_LINE = re.compile(r"^\s*[\w-]+(?:\.[\w-]+)*\.(?:de|com|org|net|at|ch|eu|
                           re.IGNORECASE)
 _LEADING_SYMBOLS = re.compile("^[\\s\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D]+")
 _MAX_CHIP_WORDS = 6
+# Video blocks copied along with the answer: platform name, duration, view count, age, "Weitere Videos".
+_VIDEO_LINE = re.compile(
+    r"^\s*(?:youtube|video|videos|weitere videos|mehr videos|videos ansehen|wiedergabe|"
+    r"\d{1,2}:\d{2}(?::\d{2})?|[\d.,]+\s*(?:mio\.?|tsd\.?|k)?\s*aufrufe|"
+    r"vor\s+\d+\s+(?:sekunden?|minuten?|stunden?|tag(?:en)?|wochen?|monat(?:en)?|jahr(?:en)?))\s*$",
+    re.IGNORECASE)
 
 
 @dataclass
@@ -72,8 +78,8 @@ class _Draft:
 
 
 def clean_pasted(text: str) -> tuple[str, list[str]]:
-    """Drop source chips from an answer copied out of Google's AI Mode / AI Overview and strip leading
-    emoji from heading lines. Returns the cleaned text and the dropped lines."""
+    """Drop source chips and video blocks from an answer copied out of Google's AI Mode / AI Overview and
+    strip leading emoji from heading lines. Returns the cleaned text and the dropped lines."""
     raw = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     chips: set[str] = set()
     for i, line in enumerate(raw):
@@ -90,7 +96,7 @@ def clean_pasted(text: str) -> tuple[str, list[str]]:
     for line in raw:
         stripped = line.strip()
         if stripped and (_PLUS_LINE.match(line) or _AUTHOR_LINE.match(line) or _DOMAIN_LINE.match(line)
-                         or stripped in chips):
+                         or _VIDEO_LINE.match(line) or stripped in chips):
             dropped.append(stripped)
             continue
         kept.append(_LEADING_SYMBOLS.sub("", line) if stripped else line)
