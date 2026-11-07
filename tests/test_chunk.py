@@ -196,3 +196,19 @@ def test_heading_markers_are_stripped_and_the_heading_merges_with_the_next_parag
         "Kosten Die Sanierung kostet 100 Euro pro Quadratmeter und hängt vom Material ab."]
     assert (merged, split) == (1, 0)
     assert "#" not in chunks[0].text
+
+
+def test_ignore_layout_lays_fixed_windows_over_the_running_text():
+    from aam.chunk import chunk_documents
+
+    text = ("## Kosten\nDie Sanierung kostet hundert Euro pro Quadratmeter im Schnitt.\n"
+            "Dazu kommen Erdarbeiten, die je nach Zugang teuer werden.\n- Strom\n- Wasser\n- Gas\n"
+            "Eine Drainage verursacht weitere Kosten, die vom Grundstück abhängen.")
+    chunks, stats = chunk_documents([doc(text)], 12, ignore_layout=True)
+    assert stats.ignore_layout and (stats.merged, stats.split, stats.split_examples) == (0, 0, ())
+    assert all(12 <= c.words <= 24 for c in chunks[:-1]) and chunks[-1].words <= 24
+    joined = " ".join(c.text for c in chunks)
+    assert "##" not in joined and "Kosten Die Sanierung" in chunks[0].text  # heading flows into the text
+    assert any("Strom Wasser Gas" in c.text for c in chunks)  # list items are not chunks of their own
+    paragraph_chunks, _ = chunk_documents([doc(text)], 12)
+    assert [c.text for c in paragraph_chunks] != [c.text for c in chunks]

@@ -173,6 +173,8 @@ def _stats_line(label: str, stats: ChunkStats) -> str:
             f"{_count(stats.split, 'Absatz', 'Absätze')} geteilt")
     if stats.empty_urls:
         line += f", {_count(len(stats.empty_urls), 'Seite', 'Seiten')} ohne Text"
+    if stats.ignore_layout:
+        return line + ", Layout ignoriert: feste Fenster über den Fließtext"
     if not stats.merge_short:
         line += ", kurze Absätze nicht zusammengelegt"
     if not stats.split_long:

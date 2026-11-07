@@ -67,7 +67,7 @@ MODE_STAGE1, MODE_MANUAL, MODE_GAP = "AI-Antwort gegen Content", "Absatz gegen T
 # at the end of each run (`remember_inputs`) and read back as the widget's `value=` when it is rendered again.
 MODE_KEYS = {
     MODE_STAGE1: ("keyword", "answer", "source_urls", "own_urls", "own_text",
-                  "target_override", "merge_short", "split_long", "covered_delta", "weak_delta",
+                  "target_override", "merge_short", "split_long", "ignore_layout", "covered_delta", "weak_delta",
                   "content_factor", "source_text", "own_url_filter", "own_label", "source_label"),
     MODE_MANUAL: ("manual_short", "manual_long"),
     MODE_GAP: ("gap_competitor_urls", "gap_competitor_text", "gap_own_urls", "gap_own_text", "gap_keyword",
@@ -142,7 +142,7 @@ with st.sidebar:
     if mode in (MODE_STAGE1, MODE_GAP):
         st.divider()
         content_factor = st.slider(
-            "Chunk-Faktor (Content zu Aussage)", 1.0, 3.0, kept("content_factor", 1.5), 0.1, key="content_factor",
+            "Chunk-Faktor (Content zu Aussage)", 1.0, 5.0, kept("content_factor", 1.5), 0.1, key="content_factor",
             help="Website-Text braucht für denselben Sachverhalt mehr Wörter als eine verdichtete AI-Aussage. "
                  "Die Chunk-Zielgröße ist der Median der Aussagenlänge mal diesem Faktor. "
                  "1,0 = gleiche Größe, 1,5 = anderthalbfach (Standard)."
@@ -163,6 +163,13 @@ with st.sidebar:
             help="Absätze über der doppelten Zielgröße werden an Satzgrenzen in Fenster geteilt, jedes Fenster "
                  "wird einzeln eingebettet, das beste zählt. Aus: lange Absätze bleiben ganz; ihr Vektor ist dann "
                  "ein Durchschnitt über alle Gedanken darin und einzelne Aussagen gehen unter.")
+        ignore_layout = st.checkbox(
+            "Layout ignorieren (feste Fenster)", value=kept("ignore_layout", False), key="ignore_layout",
+            help="Statt Absatz für Absatz wird der Seitentext als Fließtext an Satzgrenzen in Fenster der Zielgröße "
+                 "geschnitten, mit einem Satz Überlappung, wie bei den Themen. Absatz- und Listengrenzen spielen "
+                 "dann keine Rolle. Die beiden Schalter oben sind damit ohne Wirkung. Zum Vergleichen gedacht: "
+                 "Standard ist das Chunking nach Absätzen, weil ein Absatz meist einen Gedanken trägt und sich "
+                 "als Passage zitieren lässt.")
         st.caption("Status einer Aussage, gemessen am Abstand zwischen deinem besten Chunk und dem besten "
                    "Quell-Chunk (Kosinus eigen minus Kosinus Quelle):")
         covered_delta = st.slider(
@@ -179,7 +186,7 @@ with st.sidebar:
             st.warning("Die Schwelle „schwach“ liegt unter „abgedeckt“ und wird auf denselben Wert gesetzt.")
             weak_delta = covered_delta
     elif mode == MODE_GAP:
-        target_override, merge_short, split_long = 0, True, True
+        target_override, merge_short, split_long, ignore_layout = 0, True, True, False
         gap_statement_target = st.number_input(
             "Chunk-Zielgröße Aussagen-Ebene (Wörter)", min_value=10, max_value=120,
             value=kept("gap_statement_target", gap_statements.DEFAULT_STATEMENT_TARGET), step=5, key="gap_statement_target",
@@ -200,6 +207,7 @@ with st.sidebar:
             weak_delta = covered_delta
     else:  # not shown in the other modes; stage-1 values stay unused there
         target_override, merge_short, split_long, covered_delta, weak_delta = 0, True, True, 0.05, 0.15
+        ignore_layout = False
 
 
 # ---------------------------------------------------------------- helpers
@@ -503,7 +511,7 @@ def render_stage1() -> None:
                 source_label,
                 own_parsed["sig"] if own_parsed else None, tuple(sorted(own_selected)) if own_selected else None,
                 source_parsed["sig"] if source_parsed else None,
-                int(target_override), merge_short, split_long, round(content_factor, 2), source_text,
+                int(target_override), merge_short, split_long, ignore_layout, round(content_factor, 2), source_text,
                 provider_name, model)
 
 
@@ -543,7 +551,7 @@ def render_stage1() -> None:
                 failed=failed_own + failed_sources,
                 target_override=int(target_override) or None, content_factor=content_factor,
                 embed=fallback_embed(),
-                merge_short=merge_short, split_long=split_long,
+                merge_short=merge_short, split_long=split_long, ignore_layout=ignore_layout,
             )
             state["prepared_sig"] = input_signature()
             state.pop("result", None)

@@ -1057,3 +1057,10 @@ def test_header_shows_the_one_logo_and_the_author_box():
     html = [m.value for m in at.markdown]
     assert any('alt="ONE Beyond Search"' in h and "onebeyondsearch.com/img/" in h for h in html)
     assert any("Entwickelt von" in h and "SEOKomm 2026" in h for h in html)
+
+
+def test_stage1_sidebar_offers_the_layout_switch_and_a_factor_up_to_five():
+    at = AppTest.from_file(APP, default_timeout=30).run()
+    assert any(c.key == "ignore_layout" and c.value is False for c in at.sidebar.checkbox)
+    factor = next(s for s in at.sidebar.slider if s.key == "content_factor")
+    assert factor.max == 5.0

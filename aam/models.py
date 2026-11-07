@@ -78,6 +78,7 @@ class ChunkStats:
     split_examples: tuple = ()  # (url, words, windows, preview) of split paragraphs, at most MAX_SPLIT_EXAMPLES
     merge_short: bool = True  # settings the chunks were produced with
     split_long: bool = True
+    ignore_layout: bool = False  # fixed windows over the running text instead of paragraph chunks
 
 
 @dataclass(frozen=True)

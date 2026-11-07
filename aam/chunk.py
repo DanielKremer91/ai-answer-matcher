@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from typing import Sequence
 
 import numpy as np
@@ -53,15 +55,33 @@ def _windows(paragraph: str, target_words: int) -> list[str]:
 MAX_SPLIT_EXAMPLES = 20
 
 
-def _chunk_document(doc: Document, target_words: int, *, merge_short: bool, split_long: bool
-                    ) -> tuple[list[Chunk], int, int, list[tuple[str, int, int, str]]]:
+_LIST_MARKER = re.compile(r"^(?:[-*•–·▪◦]|\d{1,2}[.)])\s+")
+
+
+def _plain_line(line: str) -> str:
+    """One line of main content without heading or list markers (pasted text may carry them)."""
+    return normalize_space(_LIST_MARKER.sub("", strip_heading_marker(line.strip()), count=1))
+
+
+def _window_document(doc: Document, target_words: int) -> list[Chunk]:
+    """Layout ignored: the page as one running text, cut into sentence windows of target size
+    (the same windows the topic comparison uses)."""
+    flat = " ".join(_plain_line(line) for line in doc.text.split("\n") if line.strip())
+    windows = _windows(flat, target_words) if flat else []
+    return [Chunk(doc.url, doc.origin, i, text, count_words(text)) for i, text in enumerate(windows)]
+
+
+def _chunk_document(doc: Document, target_words: int, *, merge_short: bool, split_long: bool,
+                    ignore_layout: bool = False) -> tuple[list[Chunk], int, int, list[tuple[str, int, int, str]]]:
+    if ignore_layout:
+        return _window_document(doc, target_words), 0, 0, []
     limit = 2 * target_words
     half = target_words / 2
     pieces: list[tuple[str, bool]] = []  # (text, is a continuation window of a split paragraph)
     split = 0
     examples: list[tuple[str, int, int, str]] = []
     for line in doc.text.split("\n"):
-        paragraph = normalize_space(strip_heading_marker(line.strip()))
+        paragraph = _plain_line(line)
         if not paragraph:
             continue
         words = count_words(paragraph)
@@ -97,38 +117,40 @@ def _chunk_document(doc: Document, target_words: int, *, merge_short: bool, spli
 
 
 def chunk_document(doc: Document, target_words: int, *, merge_short: bool = True,
-                   split_long: bool = True) -> tuple[list[Chunk], int, int]:
+                   split_long: bool = True, ignore_layout: bool = False) -> tuple[list[Chunk], int, int]:
     """Return (chunks, merged paragraphs, split paragraphs) for one document.
 
     `merge_short` joins paragraphs below half the target with their neighbour; `split_long` cuts
     paragraphs above twice the target into sentence windows. Both can be switched off, then the
-    paragraphs of the page are used as they are.
+    paragraphs of the page are used as they are. `ignore_layout` drops the paragraph structure
+    altogether and lays fixed sentence windows over the running text.
     """
-    chunks, merged, split, _ = _chunk_document(doc, target_words, merge_short=merge_short, split_long=split_long)
+    chunks, merged, split, _ = _chunk_document(doc, target_words, merge_short=merge_short, split_long=split_long,
+                                               ignore_layout=ignore_layout)
     return chunks, merged, split
 
 
 def stats_for(chunks: Sequence[Chunk], *, documents: int, merged: int = 0, split: int = 0,
               empty_urls: Sequence[str] = (), split_examples: Sequence[tuple[str, int, int, str]] = (),
-              merge_short: bool = True, split_long: bool = True) -> ChunkStats:
+              merge_short: bool = True, split_long: bool = True, ignore_layout: bool = False) -> ChunkStats:
     words = [c.words for c in chunks]
     if not words:
         return ChunkStats(documents, 0, 0.0, 0.0, 0.0, merged, split, tuple(empty_urls),
-                          tuple(split_examples), merge_short, split_long)
+                          tuple(split_examples), merge_short, split_long, ignore_layout)
     p10, median, p90 = (float(v) for v in np.percentile(words, [10, 50, 90]))
     return ChunkStats(documents, len(words), median, p10, p90, merged, split, tuple(empty_urls),
-                      tuple(split_examples), merge_short, split_long)
+                      tuple(split_examples), merge_short, split_long, ignore_layout)
 
 
 def chunk_documents(docs: Sequence[Document], target_words: int, *, merge_short: bool = True,
-                    split_long: bool = True) -> tuple[list[Chunk], ChunkStats]:
+                    split_long: bool = True, ignore_layout: bool = False) -> tuple[list[Chunk], ChunkStats]:
     chunks: list[Chunk] = []
     merged = split = 0
     empty: list[str] = []
     examples: list[tuple[str, int, int, str]] = []
     for doc in docs:
         doc_chunks, doc_merged, doc_split, doc_examples = _chunk_document(
-            doc, target_words, merge_short=merge_short, split_long=split_long)
+            doc, target_words, merge_short=merge_short, split_long=split_long, ignore_layout=ignore_layout)
         if not doc_chunks:
             empty.append(doc.url)
         chunks.extend(doc_chunks)
@@ -137,4 +159,4 @@ def chunk_documents(docs: Sequence[Document], target_words: int, *, merge_short:
         examples.extend(doc_examples)
     return chunks, stats_for(chunks, documents=len(docs), merged=merged, split=split, empty_urls=empty,
                              split_examples=examples[:MAX_SPLIT_EXAMPLES], merge_short=merge_short,
-                             split_long=split_long)
+                             split_long=split_long, ignore_layout=ignore_layout)

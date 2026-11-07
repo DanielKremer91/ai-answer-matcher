@@ -67,7 +67,8 @@ def prepare(keyword: str, answer_text: str, *, own_docs: Sequence[Document] = ()
             source_docs: Sequence[Document] = (), own_chunks: Optional[Sequence[Chunk]] = None,
             stored_target: Optional[int] = None, failed: Sequence[FailedUrl] = (),
             target_override: Optional[int] = None, embed: Optional[Embed] = None,
-            merge_short: bool = True, split_long: bool = True, content_factor: float = 1.0) -> Prepared:
+            merge_short: bool = True, split_long: bool = True, content_factor: float = 1.0,
+            ignore_layout: bool = False) -> Prepared:
     if not keyword.strip():
         raise ValueError("Bitte ein Keyword oder einen Prompt eintragen.")
     if not answer_text.strip():
@@ -88,7 +89,7 @@ def prepare(keyword: str, answer_text: str, *, own_docs: Sequence[Document] = ()
                 f"die aktuelle AI-Antwort ergibt {target}. Die Scores sind dadurch nur eingeschränkt vergleichbar.")
     else:
         chunks, own_stats = chunk_documents(own_docs, answer.target_words, merge_short=merge_short,
-                                            split_long=split_long)
+                                            split_long=split_long, ignore_layout=ignore_layout)
     if not chunks:
         raise ValueError("Kein eigener Content mit Text vorhanden. Bitte Export oder URL-Liste prüfen.")
     own_keys = {url_key(d.url) for d in own_docs} if own_chunks is None else {url_key(c.url) for c in chunks}
@@ -106,7 +107,7 @@ def prepare(keyword: str, answer_text: str, *, own_docs: Sequence[Document] = ()
     source_stats = None
     if benchmarks:
         source_chunks, source_stats = chunk_documents(benchmarks, source_target, merge_short=merge_short,
-                                                      split_long=split_long)
+                                                      split_long=split_long, ignore_layout=ignore_layout)
     page_texts = {(SOURCE, d.url): plain_text(d) for d in benchmarks if d.text.strip()}
     if own_chunks is None:
         page_texts.update({(OWN, d.url): plain_text(d) for d in own_docs if d.text.strip()})

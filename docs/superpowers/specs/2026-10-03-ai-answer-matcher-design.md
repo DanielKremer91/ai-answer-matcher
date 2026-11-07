@@ -110,6 +110,8 @@ Eine Funktion für eigenen Content und Quellen:
 
 `ChunkStats` zählt Dokumente, Chunks, zusammengelegte und geteilte Absätze und die Verteilung der Wortzahl. Zusammenlegen und Teilen sind einzeln abschaltbar (Seitenleiste); die Einstellung steht im Protokoll, und Schritt 3 listet die geteilten Absätze mit Wortzahl und Fensterzahl auf.
 
+**Layout ignorieren (seit 2026-11-07, Daniels Wunsch zum Vergleichen).** Schalter in der Seitenleiste: Der Seitentext wird als Fließtext an Satzgrenzen in Fenster der Zielgröße geschnitten (`_windows`, ein Satz Überlappung), Absatz- und Listengrenzen entfallen, Zusammenlegen und Teilen sind ohne Wirkung. `ChunkStats.ignore_layout`, Protokoll: „Layout ignoriert: feste Fenster über den Fließtext“. Standard bleibt absatzbewusst. Der Chunk-Faktor-Regler reicht bis 5,0.
+
 **Seitenvektor.** Embedding des kompletten Seitentexts, wenn der Text die Grenze des Anbieters nicht überschreitet (OpenAI 5.000 Wörter, Gemini 1.200, Ollama 4.000, mit abgeschalteter stiller Kürzung). Sonst, und für Seiten aus einem Chunk-Embedding-Export, der längengewichtete Mittelwert der Chunk-Vektoren (Gewicht = Wortzahl), normalisiert. Das Protokoll nennt beide Anzahlen. Der Antwortvektor ist das Embedding der kompletten AI-Antwort als ein Text (sie ist kurz und passt in jede Grenze); nur wenn sie die Grenze doch überschreitet, steht der längengewichtete Mittelwert der Aussagen-Vektoren ein. Das Protokoll nennt die Variante („Antwortvektor“).
 
 ## 7. Matching (`aam.match`)

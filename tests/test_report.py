@@ -364,3 +364,16 @@ def test_explanation_sheet_covers_every_column_of_every_sheet():
 def test_topics_frame_names_the_window_size():
     df = topics_frame(sample_result())
     assert df["Passagengröße"].str.startswith("Fenster (").all()
+
+
+def test_stats_line_names_the_layout_free_windows():
+    from aam.chunk import chunk_documents
+    from aam.models import Document
+    from aam.report import _stats_line
+
+    doc = Document("https://me.de/a", "Eins zwei drei vier fünf sechs sieben acht neun zehn elf zwölf dreizehn. "
+                   "Vierzehn fünfzehn sechzehn siebzehn achtzehn neunzehn zwanzig einundzwanzig.", "own")
+    _, stats = chunk_documents([doc], 10, ignore_layout=True)
+    line = _stats_line("Eigener Content", stats)
+    assert line.endswith("Layout ignoriert: feste Fenster über den Fließtext")
+    assert "zusammengelegt" in line and "nicht zusammengelegt" not in line
